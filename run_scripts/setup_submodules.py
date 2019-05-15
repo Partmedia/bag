@@ -199,7 +199,7 @@ def setup_submodule_links(module_list, repo_path):
 def run_main():
     default_submodules = {
         BAG_DIR: {
-            'url': 'git@github.com:ucb-art/BAG_framework.git',
+            'url': 'git@github.com:bluecheetah/bag.git',
         },
     }
 
