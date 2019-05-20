@@ -450,19 +450,26 @@ class DesignManager(object):
         the specification file name or the data directory.
     """
 
-    def __init__(self, prj: BagProject, spec_file: str, sch_db: Optional[ModuleDB] = None,
+    def __init__(self, prj: BagProject, spec_file: Optional[str] = None,
+                 spec_dict: Optional[Dict[str, Any]] = None, sch_db: Optional[ModuleDB] = None,
                  lay_db: Optional[TemplateDB] = None) -> None:
         self.prj = prj
         self._specs = None
 
-        if os.path.isfile(spec_file):
-            self._specs = read_yaml(spec_file)
-            self._root_dir = os.path.abspath(self._specs['root_dir'])
-        elif os.path.isdir(spec_file):
-            self._root_dir = os.path.abspath(spec_file)
-            self._specs = read_yaml(os.path.join(self._root_dir, 'specs.yaml'))
+        if spec_file is None and spec_dict is None:
+            raise ValueError('Specify either spec_file or spec_dict')
+        elif spec_file:
+            if os.path.isfile(spec_file):
+                self._specs = read_yaml(spec_file)
+                self._root_dir = os.path.abspath(self._specs['root_dir'])
+            elif os.path.isdir(spec_file):
+                self._root_dir = os.path.abspath(spec_file)
+                self._specs = read_yaml(os.path.join(self._root_dir, 'specs.yaml'))
+            else:
+                raise ValueError('%s is neither data directory or specification file.' % spec_file)
         else:
-            raise ValueError('%s is neither data directory or specification file.' % spec_file)
+            self._specs = spec_dict
+            self._root_dir = os.path.abspath(self._specs['root_dir'])
 
         self._swp_var_list = tuple(sorted(self._specs['sweep_params'].keys()))
 
