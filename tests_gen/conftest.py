@@ -98,27 +98,23 @@ def get_dict_diff_msg_helper(left: Dict[str, Any], right: Dict[str, Any], msgs: 
                     next_prefix.append(k1)
                     get_dict_diff_msg_helper(v1, v2, msgs, next_prefix)
                 else:
-                    msgs.append('L[{}]:'.format(prefix_str))
-                    msgs.append('{}'.format(v1))
-                    msgs.append('R[{}]:'.format(prefix_str))
-                    msgs.append('{}'.format(v2))
+                    msgs.append(f'L[{prefix_str},{k1}]:')
+                    msgs.append(f'{v1}')
+                    msgs.append(f'R[{prefix_str},{k1}]:')
+                    msgs.append(f'{v2}')
             idx1 += 1
             idx2 += 1
         elif k1 < k2:
-            msgs.append('R[{}] missing key:'.format(prefix_str))
-            msgs.append('{}'.format(k1))
+            msgs.append(f'R[{prefix_str}] missing key: {k1}')
             idx1 += 1
         else:
-            msgs.append('L[{}] missing key:'.format(prefix_str))
-            msgs.append('{}'.format(k2))
+            msgs.append(f'L[{prefix_str}] missing key: {k2}')
             idx2 += 1
     while idx1 < n1:
-        msgs.append('R[{}] missing key:'.format(prefix_str))
-        msgs.append('{}'.format(keys1[idx1]))
+        msgs.append(f'R[{prefix_str}] missing key: {keys1[idx1]}')
         idx1 += 1
     while idx2 < n2:
-        msgs.append('L[{}] missing key:'.format(prefix_str))
-        msgs.append('{}'.format(keys2[idx2]))
+        msgs.append(f'L[{prefix_str}] missing key: {keys2[idx2]}')
         idx2 += 1
 
 
