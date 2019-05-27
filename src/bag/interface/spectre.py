@@ -17,19 +17,25 @@
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Any, Sequence, Optional
+from typing import TYPE_CHECKING, Dict, Any, Sequence, Optional, List, Tuple
 
 from pathlib import Path
 
 from pybag.enum import DesignOutput
 from srr_pybind11 import load_md_array
 
-from .simulator import SimProcessManager
 from ..data.core import MDArray
+from ..io.file import read_yaml, open_file
+from .simulator import SimProcessManager, get_corner_temp
 
 if TYPE_CHECKING:
     from .simulator import ProcInfo
-    from .simulator import NumType
+
+
+def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -> None:
+    for fname, section in models:
+        lines.append(f'include "{fname}" section={section}')
+    lines.append(f'tempOption options temp={temp}')
 
 
 class SpectreInterface(SimProcessManager):
@@ -45,18 +51,51 @@ class SpectreInterface(SimProcessManager):
 
     def __init__(self, tmp_dir: str, sim_config: Dict[str, Any]) -> None:
         SimProcessManager.__init__(self, tmp_dir, sim_config)
+        self._model_setup: Dict[str, List[Tuple[str, str]]] = read_yaml(sim_config['env_file'])
 
     @property
     def netlist_type(self) -> DesignOutput:
         return DesignOutput.SPECTRE
 
+    # TODO: figure out sweep params spec
     def create_netlist(self, output_file: str, sch_netlist: Path,
                        analyses: Dict[str, Dict[str, Any]], sim_envs: Sequence[str],
-                       params: Dict[str, NumType], swp_params: Dict[str, Sequence[NumType]],
-                       env_params: Dict[str, Sequence[NumType]], outputs: Dict[str, str],
-                       **kwargs: Any) -> None:
-        # TODO: implement this
-        pass
+                       params: Dict[str, float], swp_params: Sequence[Tuple[str, Sequence[float]]],
+                       env_params: Dict[str, Sequence[float]], outputs: Dict[str, str],
+                       precision: int = 6, **kwargs: Any) -> None:
+        if not sim_envs:
+            raise ValueError('simulation environments list is empty')
+        def_corner, def_temp = get_corner_temp(sim_envs[0])
+
+        with open_file(sch_netlist, 'r') as f:
+            lines = f.readlines()
+
+        # write default model statements
+        _write_sim_env(lines, self._model_setup[def_corner], def_temp)
+        lines.append('')
+
+        # write parameters
+        param_fmt = 'parameters {}={:.%dg}' % precision
+        env_param_keys = sorted(env_params.keys())
+
+        for par in sorted(params.keys()):
+            lines.append(param_fmt.format(par, params[par]))
+        for par in sorted(swp_params.keys()):
+            lines.append(param_fmt.format(par, swp_params[par][0]))
+        for par in env_param_keys:
+            lines.append(param_fmt.format(par, env_params[par][0]))
+
+        # write statements for each simulation environment
+        for idx, sim_env in enumerate(sim_envs):
+            # write altergroup statement
+            corner, temp = get_corner_temp(sim_env)
+            lines.append(f'{sim_env} altergroup {{')
+            _write_sim_env(lines, self._model_setup[corner], temp)
+            for par in env_param_keys:
+                lines.append(param_fmt.format(par, env_params[par][idx]))
+            lines.append('}')
+
+            # write sweep statements
 
     def load_md_array(self, dir_path: Path, sim_tag: str, precision: int) -> MDArray:
         dir_name = str(dir_path.resolve() / f'{sim_tag}.raw')

@@ -58,8 +58,14 @@ from ..data.core import MDArray
 from ..concurrent.core import SubProcessManager
 from .base import InterfaceBase
 
-NumType = Union[int, float, complex]
 ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], str]
+
+
+def get_corner_temp(env_str: str) -> Tuple[str, int]:
+    idx = env_str.rfind('_')
+    if idx < 0:
+        raise ValueError(f'Invalid environment string: {env_str}')
+    return env_str[:idx], int(env_str[idx + 1:])
 
 
 class SimAccess(InterfaceBase, abc.ABC):
@@ -87,9 +93,9 @@ class SimAccess(InterfaceBase, abc.ABC):
     @abc.abstractmethod
     def create_netlist(self, output_file: str, sch_netlist: Path,
                        analyses: Dict[str, Dict[str, Any]], sim_envs: Sequence[str],
-                       params: Dict[str, NumType], swp_params: Dict[str, Sequence[NumType]],
-                       env_params: Dict[str, Sequence[NumType]], outputs: Dict[str, str],
-                       **kwargs: Any) -> None:
+                       params: Dict[str, float], swp_params: Dict[str, Sequence[float]],
+                       env_params: Dict[str, Sequence[float]], outputs: Dict[str, str],
+                       precision: int = 6, **kwargs: Any) -> None:
         pass
 
     @abc.abstractmethod
