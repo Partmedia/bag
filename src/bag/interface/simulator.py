@@ -54,6 +54,7 @@ from pathlib import Path
 
 from pybag.enum import DesignOutput
 
+from ..data.core import MDArray
 from ..concurrent.core import SubProcessManager
 from .base import InterfaceBase
 
@@ -92,11 +93,13 @@ class SimAccess(InterfaceBase, abc.ABC):
         pass
 
     @abc.abstractmethod
-    def load_results(self, sim_tag: str, precision: int) -> Dict[str, Any]:
+    def load_md_array(self, dir_path: Path, sim_tag: str, precision: int) -> MDArray:
         """Load simulation results.
 
         Parameters
         ----------
+        dir_path : Path
+            the working directory path.
         sim_tag : str
             optional simulation name.  Empty for default.
         precision : int
@@ -107,7 +110,7 @@ class SimAccess(InterfaceBase, abc.ABC):
         data : Dict[str, Any]
             the simulation data dictionary.
         """
-        return {}
+        pass
 
     @abc.abstractmethod
     async def async_run_simulation(self, netlist: str, sim_tag: str) -> None:

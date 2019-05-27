@@ -44,10 +44,56 @@
 """This module defines core data post-processing classes.
 """
 
+from typing import List, Dict, Tuple
+
 import numpy as np
 import scipy.interpolate as interp
 import scipy.cluster.vq as svq
 import scipy.optimize as sciopt
+
+from ..util.immutable import ImmutableList
+
+
+class MDArray:
+    """A data structure that stores simulation data as a multi-dimensional array."""
+
+    def __init__(self, env_list: List[str],
+                 data: Dict[str, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]]) -> None:
+        self._corners = ImmutableList(env_list)
+        self._corners_arr = np.array(env_list)
+        self._master_table = data
+
+        if self._master_table:
+            self._cur_key = next(iter(self._master_table.keys()))
+            tmp = self._master_table[self._cur_key]
+            self._cur_data: Dict[str, np.ndarray] = tmp[0]
+            self._cur_swp_params: Dict[str, List[str]] = tmp[1]
+        else:
+            raise ValueError('Empty simulation data.')
+
+    @property
+    def analysis(self) -> str:
+        return self._cur_key
+
+    @property
+    def env_list(self) -> ImmutableList[str]:
+        return self._corners
+
+    def __getitem__(self, item: str) -> np.ndarray:
+        if item == 'corner':
+            return self._corners_arr
+        return self._cur_data[item]
+
+    def get_swp_params(self, item: str) -> ImmutableList[str]:
+        return ImmutableList(self._cur_swp_params[item])
+
+    def set_analysis(self, val: str) -> None:
+        if val not in self._master_table:
+            raise ValueError(f'Analysis {val} not found.')
+        self._cur_key = val
+        tmp = self._master_table[self._cur_key]
+        self._cur_data: Dict[str, np.ndarray] = tmp[0]
+        self._cur_swp_params: Dict[str, List[str]] = tmp[1]
 
 
 class Waveform(object):
@@ -69,6 +115,7 @@ class Waveform(object):
         interpolation extension mode.  See documentation for InterpolatedUnivariateSpline.
 
     """
+
     def __init__(self, xvec, yvec, xtol, order=3, ext=3):
         self._xvec = xvec
         self._yvec = yvec
@@ -220,7 +267,7 @@ class Waveform(object):
         xval_list = self.get_all_crossings(threshold, start=start, stop=stop, edge=edge)
         if len(xval_list) < n:
             return None
-        return xval_list[n-1]
+        return xval_list[n - 1]
 
     def to_arrays(self, xmin=None, xmax=None):
         """Returns the X and Y arrays representing this waveform.
@@ -356,7 +403,8 @@ class Waveform(object):
 
     def __add__(self, other):
         if np.isscalar(other):
-            return Waveform(np.array(self.xvec), self.yvec + other, self.xtol, order=self.order, ext=self.ext)
+            return Waveform(np.array(self.xvec), self.yvec + other, self.xtol, order=self.order,
+                            ext=self.ext)
         elif isinstance(other, Waveform):
             new_order = max(self.order, other.order)
             xvec, yvec = self._add_xy(other)
@@ -370,7 +418,8 @@ class Waveform(object):
     def __mul__(self, scale):
         if not np.isscalar(scale):
             raise ValueError("Can only multiply by scalar.")
-        return Waveform(np.array(self.xvec), scale * self.yvec, self.xtol, order=self.order, ext=self.ext)
+        return Waveform(np.array(self.xvec), scale * self.yvec, self.xtol, order=self.order,
+                        ext=self.ext)
 
     def __rmul__(self, scale):
         return self.__mul__(scale)

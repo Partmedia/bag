@@ -22,8 +22,10 @@ from typing import TYPE_CHECKING, Dict, Any, Sequence, Optional
 from pathlib import Path
 
 from pybag.enum import DesignOutput
+from srr_pybind11 import load_md_array
 
 from .simulator import SimProcessManager
+from ..data.core import MDArray
 
 if TYPE_CHECKING:
     from .simulator import ProcInfo
@@ -56,9 +58,10 @@ class SpectreInterface(SimProcessManager):
         # TODO: implement this
         pass
 
-    def load_results(self, sim_tag: str, precision: int) -> Dict[str, Any]:
-        # TODO: implement this
-        return {}
+    def load_md_array(self, dir_path: Path, sim_tag: str, precision: int) -> MDArray:
+        dir_name = str(dir_path.resolve() / f'{sim_tag}.raw')
+        env_list, data = load_md_array(dir_name)
+        return MDArray(env_list, data)
 
     def setup_sim_process(self, netlist: str, sim_tag: str) -> ProcInfo:
         sim_kwargs: Dict[str, Any] = self.config['kwargs']
@@ -69,7 +72,7 @@ class SpectreInterface(SimProcessManager):
         fmt: str = sim_kwargs.get('format', 'psfxl')
         psf_version: str = sim_kwargs.get('psfversion', '1.1')
 
-        sim_cmd = [cmd_str, '-cols', '100', '-format', fmt]
+        sim_cmd = [cmd_str, '-cols', '100', '-format', fmt, '-raw', f'{sim_tag}.raw']
 
         if fmt == 'psfxl':
             sim_cmd.append('-psfversion')
