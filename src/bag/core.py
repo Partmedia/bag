@@ -49,11 +49,11 @@ from typing import TYPE_CHECKING, Dict, Any, Tuple, Optional, Union, Type, Seque
 import os
 import cProfile
 import pstats
+from pathlib import Path
 
-from pybag.enum import DesignOutput
+from pybag.enum import DesignOutput, get_extension
 
 from .interface import ZMQDealer
-from .interface.database import DbAccess
 from .layout.routing.grid import RoutingGrid
 from .layout.template import TemplateDB
 from .layout.tech import TechInfo
@@ -63,6 +63,7 @@ from .env import (
     get_port_number, get_bag_config, get_bag_work_dir, create_routing_grid
 )
 from .util.importlib import import_class
+from .util.immutable import ImmutableList
 
 if TYPE_CHECKING:
     from .interface.simulator import SimAccess
@@ -81,69 +82,40 @@ class Testbench(object):
     ----------
     sim : :class:`bag.interface.simulator.SimAccess`
         The SimAccess instance used to issue simulation commands.
-    db : :class:`bag.interface.database.DbAccess`
-        The DbAccess instance used to update testbench schematic.
-    lib : str
-        testbench library.
-    cell : str
-        testbench cell.
-    parameters : Dict[str, str]
-        the simulation parameter dictionary.  The values are string representation
-        of actual parameter values.
-    env_list : Sequence[str]
-        list of defined simulation environments.
-    default_envs : Sequence[str]
-        the selected simulation environments.
-    outputs : Dict[str, str]
-        default output expressions
-
-    Attributes
-    ----------
-    lib : str
-        testbench library.
-    cell : str
-        testbench cell.
-    save_dir : str
-        directory containing the last simulation data.
+    netlist_path : Path
+        path to the testbench netlist.
+    work_dir : Path
+        the working directory path.
     """
 
-    def __init__(self,  # type: Testbench
-                 sim,  # type: SimAccess
-                 db,  # type: DbAccess
-                 lib,  # type: str
-                 cell,  # type: str
-                 parameters,  # type: Dict[str, str]
-                 env_list,  # type: Sequence[str]
-                 default_envs,  # type: Sequence[str]
-                 outputs,  # type: Dict[str, str]
-                 ):
-        # type: (...) -> None
+    def __init__(self, sim: SimAccess, netlist_path: Path, work_dir: Path) -> None:
         """Create a new testbench instance.
         """
-        self.sim = sim
-        self.db = db
-        self.lib = lib
-        self.cell = cell
-        self.parameters = parameters
-        self.env_parameters = {}
-        self.env_list = env_list
-        self.sim_envs = default_envs
-        self.config_rules = {}
-        self.outputs = outputs
-        self.save_dir = None
+        self._sim = sim
+        self._netlist_path = netlist_path
+        self._work_dir = work_dir
+        self._sim_envs: ImmutableList[str] = ImmutableList([])
+        self._params: Dict[str, str] = {}
+        self._env_params: Dict[str, Dict[str, str]] = {}
+        self._outputs: Dict[str, str] = {}
 
-    def get_defined_simulation_environments(self):
-        # type: () -> Sequence[str]
-        """Return a list of defined simulation environments"""
-        return self.env_list
+    @property
+    def sim_envs(self) -> ImmutableList[str]:
+        """ImmutableList[str]: A list of current simulation environments"""
+        return self._sim_envs
 
-    def get_current_simulation_environments(self):
-        # type: () -> Sequence[str]
-        """Returns a list of simulation environments this testbench will simulate."""
-        return self.sim_envs
+    @property
+    def sim_netlist_name(self) -> str:
+        """str: the generated simulation netlist name."""
+        basename = self._netlist_path.stem
+        suffix = get_extension(self._sim.netlist_type)
+        return str(self._work_dir / (basename + f'_sim.{suffix}'))
 
-    def add_output(self, var, expr):
-        # type: (str, str) -> None
+    @sim_envs.setter
+    def sim_envs(self, env_list: Sequence[str]) -> None:
+        self._sim_envs = ImmutableList(env_list)
+
+    def add_output(self, var: str, expr: str) -> None:
         """Add an output expression to be recorded and exported back to python.
 
         Parameters
@@ -154,11 +126,10 @@ class Testbench(object):
             the output expression.
         """
         if var in sim_data.illegal_var_name:
-            raise ValueError('Variable name %s is illegal.' % var)
-        self.outputs[var] = expr
+            raise ValueError(f'Variable name {var} is illegal.')
+        self._outputs[var] = expr
 
-    def set_parameter(self, name, val, precision=6):
-        # type: (str, Union[int, float], int) -> None
+    def set_parameter(self, name: str, val: float, precision: int = 6) -> None:
         """Sets the value of the given simulation parameter.
 
         Parameters
@@ -171,10 +142,9 @@ class Testbench(object):
             the parameter value will be rounded to this precision.
         """
         param_config = dict(type='single', value=val)
-        self.parameters[name] = self.sim.format_parameter_value(param_config, precision)
+        self._params[name] = self._sim.format_parameter_value(param_config, precision)
 
-    def set_env_parameter(self, name, val_list, precision=6):
-        # type: (str, Sequence[float], int) -> None
+    def set_env_parameter(self, name: str, val_list: Sequence[float], precision: int = 6) -> None:
         """Configure the given parameter to have different value across simulation environments.
 
         Parameters
@@ -188,25 +158,22 @@ class Testbench(object):
             the parameter value will be rounded to this precision.
         """
         if len(self.sim_envs) != len(val_list):
-            raise ValueError('env parameter must have %d values.' % len(self.sim_envs))
+            raise ValueError(f'env parameter must have {len(self.sim_envs)} values.')
 
         default_val = None
         for env, val in zip(self.sim_envs, val_list):
-            if env not in self.env_parameters:
-                cur_dict = {}
-                self.env_parameters[env] = cur_dict
-            else:
-                cur_dict = self.env_parameters[env]
+            cur_dict = self._env_params.get(env, None)
+            if cur_dict is None:
+                self._env_params[env] = cur_dict = {}
 
             param_config = dict(type='single', value=val)
-            cur_val = self.sim.format_parameter_value(param_config, precision)
+            cur_dict[name] = cur_val = self._sim.format_parameter_value(param_config, precision)
             if default_val is None:
                 default_val = cur_val
-            cur_dict[name] = self.sim.format_parameter_value(param_config, precision)
-        self.parameters[name] = default_val
 
-    def set_sweep_parameter(self, name, precision=6, **kwargs):
-        # type: (str, int, **Any) -> None
+        self._params[name] = default_val
+
+    def set_sweep_parameter(self, name: str, precision: int = 6, **kwargs: Any) -> None:
         """Set to sweep the given parameter.
 
         To set the sweep values directly:
@@ -230,103 +197,65 @@ class Testbench(object):
         **kwargs : Any
             the sweep parameters.  Refer to the above for example calls.
         """
-        if 'values' in kwargs:
-            param_config = dict(type='list', values=kwargs['values'])
-        elif 'start' in kwargs and 'stop' in kwargs:
-            start = kwargs['start']
-            stop = kwargs['stop']
-            if 'step' in kwargs:
-                step = kwargs['step']
-                param_config = dict(type='linstep', start=start, stop=stop, step=step)
-            elif 'num_decade' in kwargs:
-                num = kwargs['num_decade']
-                param_config = dict(type='decade', start=start, stop=stop, num=num)
-            else:
-                raise Exception('Unsupported sweep arguments: %s' % kwargs)
+        values = kwargs.get('values', None)
+        if values is not None:
+            param_config = dict(type='list', values=values)
         else:
-            raise Exception('Unsupported sweep arguments: %s' % kwargs)
+            start = kwargs.get('start', None)
+            stop = kwargs.get('stop', None)
+            if start is not None and stop is not None:
+                step = kwargs.get('step', None)
+                if step is not None:
+                    param_config = dict(type='linstep', start=start, stop=stop, step=step)
+                else:
+                    num_decade = kwargs.get('num_decade', None)
+                    if num_decade is not None:
+                        param_config = dict(type='decade', start=start, stop=stop, num=num_decade)
+                    else:
+                        raise ValueError(f'Unsupported sweep arguments: {kwargs}')
+            else:
+                raise ValueError('Unsupported sweep arguments: {kwargs}')
 
-        self.parameters[name] = self.sim.format_parameter_value(param_config, precision)
+        self._params[name] = self._sim.format_parameter_value(param_config, precision)
 
-    def set_simulation_environments(self, env_list):
-        # type: (Sequence[str]) -> None
-        """Enable the given list of simulation environments.
+    def create_netlist(self) -> str:
+        fname = self.sim_netlist_name
+        self._sim.create_netlist(fname, self._netlist_path, self._sim_envs, self._params,
+                                 self._env_params, self._outputs)
+        return fname
 
-        If more than one simulation environment is specified, then a sweep
-        will be performed.
-
-        Parameters
-        ----------
-        env_list : Sequence[str]
-        """
-        self.sim_envs = env_list
-
-    def set_simulation_view(self, lib_name, cell_name, sim_view):
-        # type: (str, str, str) -> None
-        """Set the simulation view of the given design.
-
-        For simulation, each design may have multiple views, such as schematic,
-        veriloga, extracted, etc.  This method lets you choose which view to
-        use for netlisting.  the given design can be the top level design or
-        an intermediate instance.
-
-        Parameters
-        ----------
-        lib_name : str
-            design library name.
-        cell_name : str
-            design cell name.
-        sim_view : str
-            the view to simulate with.
-        """
-        key = '%s__%s' % (lib_name, cell_name)
-        self.config_rules[key] = sim_view
-
-    def update_testbench(self):
-        # type: () -> None
-        """Commit the testbench changes to the CAD database.
-        """
-        config_list = []
-        for key, view in self.config_rules.items():
-            lib, cell = key.split('__')
-            config_list.append([lib, cell, view])
-
-        env_params = []
-        for env in self.sim_envs:
-            if env in self.env_parameters:
-                val_table = self.env_parameters[env]
-                env_params.append(list(val_table.items()))
-        self.db.update_testbench(self.lib, self.cell, self.parameters, self.sim_envs, config_list,
-                                 env_params)
-
-    def run_simulation(self, precision=6, sim_tag=None):
-        # type: (int, Optional[str]) -> Optional[str]
+    def run_simulation(self, sim_tag: str = '', precision: int = 6) -> Dict[str, Any]:
         """Run simulation.
 
         Parameters
         ----------
+        sim_tag : str
+            optional simulation name.  Empty for default.
         precision : int
             the floating point number precision.
-        sim_tag : Optional[str]
-            optional description for this simulation run.
 
         Returns
         -------
         value : Optional[str]
             the save directory path.  If simulation is cancelled, return None.
         """
-        coro = self.async_run_simulation(precision=precision, sim_tag=sim_tag)
-        batch_async_task([coro])
-        return self.save_dir
+        coro = self.async_run_simulation(sim_tag=sim_tag)
+        results = batch_async_task([coro])
+        if results is None:
+            # user cancelled
+            return {}
+        elif isinstance(results[0], Exception):
+            # an error occurred
+            raise results[0]
+        return self.load_sim_results(sim_tag, precision=precision)
 
-    def load_sim_results(self, hist_name, precision=6):
-        # type: (str, int) -> Optional[str]
-        """Load previous simulation data.
+    def load_sim_results(self, sim_tag: str = '', precision: int = 6) -> Dict[str, Any]:
+        """Load simulation data.
 
         Parameters
         ----------
-        hist_name : str
-            the simulation history name.
+        sim_tag : str
+            the simulation name.  Empty for default.
         precision : int
             the floating point number precision.
 
@@ -335,51 +264,18 @@ class Testbench(object):
         value : Optional[str]
             the save directory path.  If result loading is cancelled, return None.
         """
-        coro = self.async_load_results(hist_name, precision=precision)
-        batch_async_task([coro])
-        return self.save_dir
+        return self._sim.load_results(sim_tag, precision)
 
-    async def async_run_simulation(self,
-                                   precision: int = 6,
-                                   sim_tag: Optional[str] = None) -> str:
+    async def async_run_simulation(self, sim_tag: str = '') -> None:
         """A coroutine that runs the simulation.
 
         Parameters
         ----------
-        precision : int
-            the floating point number precision.
-        sim_tag : Optional[str]
-            optional description for this simulation run.
-
-        Returns
-        -------
-        value : str
-            the save directory path.
+        sim_tag : str
+            optional simulation name.  Empty for default.
         """
-        self.save_dir = None
-        self.save_dir = await self.sim.async_run_simulation(self.lib, self.cell, self.outputs,
-                                                            precision=precision, sim_tag=sim_tag)
-        return self.save_dir
-
-    async def async_load_results(self, hist_name: str, precision: int = 6) -> str:
-        """A coroutine that loads previous simulation data.
-
-        Parameters
-        ----------
-        hist_name : str
-            the simulation history name.
-        precision : int
-            the floating point number precision.
-
-        Returns
-        -------
-        value : str
-            the save directory path.
-        """
-        self.save_dir = None
-        self.save_dir = await self.sim.async_load_results(self.lib, self.cell, hist_name,
-                                                          self.outputs, precision=precision)
-        return self.save_dir
+        fname = self.create_netlist()
+        await self._sim.async_run_simulation(fname, sim_tag)
 
 
 class BagProject(object):
@@ -720,54 +616,6 @@ class BagProject(object):
             layout view name.
         """
         self.impl_db.instantiate_layout(lib_name, content_list, lib_path=lib_path, view=view)
-
-    def configure_testbench(self, tb_lib, tb_cell):
-        # type: (str, str) -> Testbench
-        """Update testbench state for the given testbench.
-
-        This method fill in process-specific information for the given testbench, then returns
-        a testbench object which you can use to control simulation.
-
-        Parameters
-        ----------
-        tb_lib : str
-            testbench library name.
-        tb_cell : str
-            testbench cell name.
-
-        Returns
-        -------
-        tb : :class:`bag.core.Testbench`
-            the :class:`~bag.core.Testbench` instance.
-        """
-        if self.sim is None:
-            raise Exception('SimAccess is not set up.')
-
-        c, clist, params, outputs = self.impl_db.configure_testbench(tb_lib, tb_cell)
-        return Testbench(self.sim, self.impl_db, tb_lib, tb_cell, params, clist, [c], outputs)
-
-    def load_testbench(self, tb_lib, tb_cell):
-        # type: (str, str) -> Testbench
-        """Loads a testbench from the database.
-
-        Parameters
-        ----------
-        tb_lib : str
-            testbench library name.
-        tb_cell : str
-            testbench cell name.
-
-        Returns
-        -------
-        tb : :class:`bag.core.Testbench`
-            the :class:`~bag.core.Testbench` instance.
-        """
-        if self.sim is None:
-            raise Exception('SimAccess is not set up.')
-
-        cur_envs, all_envs, params, outputs = self.impl_db.get_testbench_info(tb_lib, tb_cell)
-        return Testbench(self.sim, self.impl_db, tb_lib, tb_cell, params, all_envs,
-                         cur_envs, outputs)
 
     def release_write_locks(self, lib_name, cell_view_list):
         # type: (str, Sequence[Tuple[str, str]]) -> None

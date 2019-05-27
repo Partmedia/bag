@@ -50,14 +50,16 @@ and retrieve results.
 from typing import Dict, Optional, Sequence, Any, Tuple, Union
 
 import abc
+from pathlib import Path
 
 from pybag.enum import DesignOutput
 
 from ..io import make_temp_dir
+from ..util.immutable import ImmutableList
 from ..concurrent.core import SubProcessManager
 from .base import InterfaceBase
 
-ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], Optional[str], str]
+ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], str]
 
 
 class SimAccess(InterfaceBase, abc.ABC):
@@ -71,8 +73,7 @@ class SimAccess(InterfaceBase, abc.ABC):
         the simulation configuration dictionary.
     """
 
-    def __init__(self, tmp_dir, sim_config):
-        # type: (str, Dict[str, Any]) -> None
+    def __init__(self, tmp_dir: str, sim_config: Dict[str, Any]) -> None:
         InterfaceBase.__init__(self)
 
         self.sim_config = sim_config
@@ -123,57 +124,44 @@ class SimAccess(InterfaceBase, abc.ABC):
         return ""
 
     @abc.abstractmethod
-    async def async_run_simulation(self, tb_lib, tb_cell, outputs, precision=6, sim_tag=None):
-        # type: (str, str, Dict[str, str], int, Optional[str]) -> str
+    def create_netlist(self, output_file: str, sch_netlist: Path, sim_envs: ImmutableList[str],
+                       params: Dict[str, str], env_params: Dict[str, Dict[str, str]],
+                       outputs: Dict[str, str]) -> str:
+        return ''
+
+    @abc.abstractmethod
+    def load_results(self, sim_tag: str, precision: int) -> Dict[str, Any]:
+        """Load simulation results.
+
+        Parameters
+        ----------
+        sim_tag : str
+            optional simulation name.  Empty for default.
+        precision : int
+            the floating point number precision.
+
+        Returns
+        -------
+        data : Dict[str, Any]
+            the simulation data dictionary.
+        """
+        return {}
+
+    @abc.abstractmethod
+    async def async_run_simulation(self, netlist: str, sim_tag: str) -> None:
         """A coroutine for simulation a testbench.
 
         Parameters
         ----------
-        tb_lib : str
-            testbench library name.
-        tb_cell : str
-            testbench cell name.
-        outputs : Dict[str, str]
-            the variable-to-expression dictionary.
-        precision : int
-            precision of floating point results.
-        sim_tag : Optional[str]
-            a descriptive tag describing this simulation run.
-
-        Returns
-        -------
-        value : str
-            the save directory path.
-        """
-        pass
-
-    @abc.abstractmethod
-    async def async_load_results(self, lib, cell, hist_name, outputs, precision=6):
-        # type: (str, str, str, Dict[str, str], int) -> str
-        """A coroutine for loading simulation results.
-
-        Parameters
-        ----------
-        lib : str
-            testbench library name.
-        cell : str
-            testbench cell name.
-        hist_name : str
-            simulation history name.
-        outputs : Dict[str, str]
-            the variable-to-expression dictionary.
-        precision : int
-            precision of floating point results.
-
-        Returns
-        -------
-        value : str
-            the save directory path.
+        netlist : str
+            the netlist file name.
+        sim_tag : str
+            optional simulation name.  Empty for default.
         """
         pass
 
 
-class SimProcessManager(SimAccess, metaclass=abc.ABCMeta):
+class SimProcessManager(SimAccess, abc.ABC):
     """An implementation of :class:`SimAccess` using :class:`SubProcessManager`.
 
     Parameters
@@ -184,9 +172,9 @@ class SimProcessManager(SimAccess, metaclass=abc.ABCMeta):
         the simulation configuration dictionary.
     """
 
-    def __init__(self, tmp_dir, sim_config):
-        # type: (str, Dict[str, Any]) -> None
+    def __init__(self, tmp_dir: str, sim_config: Dict[str, Any]) -> None:
         SimAccess.__init__(self, tmp_dir, sim_config)
+
         cancel_timeout = sim_config.get('cancel_timeout_ms', None)
         if cancel_timeout is not None:
             cancel_timeout /= 1e3
@@ -194,22 +182,15 @@ class SimProcessManager(SimAccess, metaclass=abc.ABCMeta):
                                           cancel_timeout=cancel_timeout)
 
     @abc.abstractmethod
-    def setup_sim_process(self, lib, cell, outputs, precision, sim_tag):
-        # type: (str, str, Dict[str, str], int, Optional[str]) -> ProcInfo
+    def setup_sim_process(self, netlist: str, sim_tag: str) -> ProcInfo:
         """This method performs any setup necessary to configure a simulation process.
 
         Parameters
         ----------
-        lib : str
-            testbench library name.
-        cell : str
-            testbench cell name.
-        outputs : Dict[str, str]
-            the variable-to-expression dictionary.
-        precision : int
-            precision of floating point results.
-        sim_tag : Optional[str]
-            a descriptive tag describing this simulation run.
+        netlist : str
+            the netlist file name.
+        sim_tag : str
+            optional simulation name.  Empty for default.
 
         Returns
         -------
@@ -219,61 +200,12 @@ class SimProcessManager(SimAccess, metaclass=abc.ABCMeta):
             log file name.
         env : Optional[Dict[str, str]]
             environment variable dictionary.  None to inherit from parent.
-        cwd : Optional[str]
-            working directory path.  None to inherit from parent.
-        save_dir : str
-            save directory path.
+        cwd : str
+            working directory for the subprocess.
         """
-        return '', '', None, None, ''
+        return '', '', None, ''
 
-    @abc.abstractmethod
-    def setup_load_process(self, lib, cell, hist_name, outputs, precision):
-        # type: (str, str, str, Dict[str, str], int) -> ProcInfo
-        """This method performs any setup necessary to configure a result loading process.
-
-        Parameters
-        ----------
-        lib : str
-            testbench library name.
-        cell : str
-            testbench cell name.
-        hist_name : str
-            simulation history name.
-        outputs : Dict[str, str]
-            the variable-to-expression dictionary.
-        precision : int
-            precision of floating point results.
-
-        Returns
-        -------
-        args : Union[str, Sequence[str]]
-            command to run, as string or list of string arguments.
-        log : str
-            log file name.
-        env : Optional[Dict[str, str]]
-            environment variable dictionary.  None to inherit from parent.
-        cwd : Optional[str]
-            working directory path.  None to inherit from parent.
-        save_dir : str
-            save directory path.
-        """
-        return '', '', None, None, ''
-
-    async def async_run_simulation(self, tb_lib: str, tb_cell: str,
-                                   outputs: Dict[str, str],
-                                   precision: int = 6,
-                                   sim_tag: Optional[str] = None) -> str:
-        args, log, env, cwd, save_dir = self.setup_sim_process(tb_lib, tb_cell, outputs, precision,
-                                                               sim_tag)
+    async def async_run_simulation(self, netlist: str, sim_tag: str) -> None:
+        args, log, env, cwd = self.setup_sim_process(netlist, sim_tag)
 
         await self._manager.async_new_subprocess(args, log, env=env, cwd=cwd)
-        return save_dir
-
-    async def async_load_results(self, lib: str, cell: str, hist_name: str,
-                                 outputs: Dict[str, str],
-                                 precision: int = 6) -> str:
-        args, log, env, cwd, save_dir = self.setup_load_process(lib, cell, hist_name, outputs,
-                                                                precision)
-
-        await self._manager.async_new_subprocess(args, log, env=env, cwd=cwd)
-        return save_dir
