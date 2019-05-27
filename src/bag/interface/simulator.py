@@ -54,11 +54,10 @@ from pathlib import Path
 
 from pybag.enum import DesignOutput
 
-from ..io import make_temp_dir
-from ..util.immutable import ImmutableList
 from ..concurrent.core import SubProcessManager
 from .base import InterfaceBase
 
+NumType = Union[int, float, complex]
 ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], str]
 
 
@@ -67,17 +66,17 @@ class SimAccess(InterfaceBase, abc.ABC):
 
     Parameters
     ----------
-    tmp_dir : str
-        temporary file directory for SimAccess.
+    parent : str
+        parent directory for SimAccess.
     sim_config : Dict[str, Any]
         the simulation configuration dictionary.
     """
 
-    def __init__(self, tmp_dir: str, sim_config: Dict[str, Any]) -> None:
+    def __init__(self, parent: str, sim_config: Dict[str, Any]) -> None:
         InterfaceBase.__init__(self)
 
-        self.sim_config = sim_config
-        self.tmp_dir = make_temp_dir('simTmp', parent_dir=tmp_dir)
+        self._config = sim_config
+        self._dir_path = Path(parent) / "simulations"
 
     @property
     @abc.abstractmethod
@@ -85,49 +84,12 @@ class SimAccess(InterfaceBase, abc.ABC):
         return DesignOutput.CDL
 
     @abc.abstractmethod
-    def format_parameter_value(self, param_config, precision):
-        # type: (Dict[str, Any], int) -> str
-        """Format the given parameter value as a string.
-
-        To support both single value parameter and parameter sweeps, each parameter value is
-        represented as a string instead of simple floats.  This method will cast a parameter
-        configuration (which can either be a single value or a sweep) to a
-        simulator-specific string.
-
-        Parameters
-        ----------
-        param_config: Dict[str, Any]
-            a dictionary that describes this parameter value.
-
-            4 formats are supported.  This is best explained by example.
-
-            single value:
-            dict(type='single', value=1.0)
-
-            sweep a given list of values:
-            dict(type='list', values=[1.0, 2.0, 3.0])
-
-            linear sweep with inclusive start, inclusive stop, and step size:
-            dict(type='linstep', start=1.0, stop=3.0, step=1.0)
-
-            logarithmic sweep with given number of points per decade:
-            dict(type='decade', start=1.0, stop=10.0, num=10)
-
-        precision : int
-            the parameter value precision.
-
-        Returns
-        -------
-        param_str : str
-            a string representation of param_config
-        """
-        return ""
-
-    @abc.abstractmethod
-    def create_netlist(self, output_file: str, sch_netlist: Path, sim_envs: ImmutableList[str],
-                       params: Dict[str, str], env_params: Dict[str, Dict[str, str]],
-                       outputs: Dict[str, str]) -> str:
-        return ''
+    def create_netlist(self, output_file: str, sch_netlist: Path,
+                       analyses: Dict[str, Dict[str, Any]], sim_envs: Sequence[str],
+                       params: Dict[str, NumType], swp_params: Dict[str, Sequence[NumType]],
+                       env_params: Dict[str, Sequence[NumType]], outputs: Dict[str, str],
+                       **kwargs: Any) -> None:
+        pass
 
     @abc.abstractmethod
     def load_results(self, sim_tag: str, precision: int) -> Dict[str, Any]:
@@ -160,6 +122,16 @@ class SimAccess(InterfaceBase, abc.ABC):
         """
         pass
 
+    @property
+    def dir_path(self) -> Path:
+        """Path: the directory for simulation files."""
+        return self._dir_path
+
+    @property
+    def config(self) -> Dict[str, Any]:
+        """Dict[str, Any]: simulation configurations."""
+        return self._config
+
 
 class SimProcessManager(SimAccess, abc.ABC):
     """An implementation of :class:`SimAccess` using :class:`SubProcessManager`.
@@ -175,10 +147,8 @@ class SimProcessManager(SimAccess, abc.ABC):
     def __init__(self, tmp_dir: str, sim_config: Dict[str, Any]) -> None:
         SimAccess.__init__(self, tmp_dir, sim_config)
 
-        cancel_timeout = sim_config.get('cancel_timeout_ms', None)
-        if cancel_timeout is not None:
-            cancel_timeout /= 1e3
-        self._manager = SubProcessManager(max_workers=sim_config.get('max_workers', None),
+        cancel_timeout = sim_config.get('cancel_timeout_ms', 10000) / 1e3
+        self._manager = SubProcessManager(max_workers=sim_config.get('max_workers', 0),
                                           cancel_timeout=cancel_timeout)
 
     @abc.abstractmethod

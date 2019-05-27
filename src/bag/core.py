@@ -43,239 +43,35 @@
 
 """This is the core bag module.
 """
+from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, Any, Tuple, Optional, Union, Type, Sequence, TypeVar
 
 import os
 import cProfile
 import pstats
-from pathlib import Path
 
-from pybag.enum import DesignOutput, get_extension
+from pybag.enum import DesignOutput
 
 from .interface import ZMQDealer
 from .layout.routing.grid import RoutingGrid
 from .layout.template import TemplateDB
 from .layout.tech import TechInfo
-from .io import sim_data
 from .concurrent.core import batch_async_task
 from .env import (
-    get_port_number, get_bag_config, get_bag_work_dir, create_routing_grid
+    get_port_number, get_bag_config, get_bag_work_dir, create_routing_grid, get_bag_tmp_dir
 )
 from .util.importlib import import_class
-from .util.immutable import ImmutableList
 
 if TYPE_CHECKING:
     from .interface.simulator import SimAccess
+    from .interface.database import DbAccess
     from .layout.template import TemplateBase
     from .design.module import Module
     from .design.database import ModuleDB
 
     ModuleType = TypeVar('ModuleType', bound=Module)
     TemplateType = TypeVar('TemplateType', bound=TemplateBase)
-
-
-class Testbench(object):
-    """A class that represents a testbench instance.
-
-    Parameters
-    ----------
-    sim : :class:`bag.interface.simulator.SimAccess`
-        The SimAccess instance used to issue simulation commands.
-    netlist_path : Path
-        path to the testbench netlist.
-    work_dir : Path
-        the working directory path.
-    """
-
-    def __init__(self, sim: SimAccess, netlist_path: Path, work_dir: Path) -> None:
-        """Create a new testbench instance.
-        """
-        self._sim = sim
-        self._netlist_path = netlist_path
-        self._work_dir = work_dir
-        self._sim_envs: ImmutableList[str] = ImmutableList([])
-        self._params: Dict[str, str] = {}
-        self._env_params: Dict[str, Dict[str, str]] = {}
-        self._outputs: Dict[str, str] = {}
-
-    @property
-    def sim_envs(self) -> ImmutableList[str]:
-        """ImmutableList[str]: A list of current simulation environments"""
-        return self._sim_envs
-
-    @property
-    def sim_netlist_name(self) -> str:
-        """str: the generated simulation netlist name."""
-        basename = self._netlist_path.stem
-        suffix = get_extension(self._sim.netlist_type)
-        return str(self._work_dir / (basename + f'_sim.{suffix}'))
-
-    @sim_envs.setter
-    def sim_envs(self, env_list: Sequence[str]) -> None:
-        self._sim_envs = ImmutableList(env_list)
-
-    def add_output(self, var: str, expr: str) -> None:
-        """Add an output expression to be recorded and exported back to python.
-
-        Parameters
-        ----------
-        var : str
-            output variable name.
-        expr : str
-            the output expression.
-        """
-        if var in sim_data.illegal_var_name:
-            raise ValueError(f'Variable name {var} is illegal.')
-        self._outputs[var] = expr
-
-    def set_parameter(self, name: str, val: float, precision: int = 6) -> None:
-        """Sets the value of the given simulation parameter.
-
-        Parameters
-        ----------
-        name : str
-            parameter name.
-        val : Union[int, float]
-            parameter value
-        precision : int
-            the parameter value will be rounded to this precision.
-        """
-        param_config = dict(type='single', value=val)
-        self._params[name] = self._sim.format_parameter_value(param_config, precision)
-
-    def set_env_parameter(self, name: str, val_list: Sequence[float], precision: int = 6) -> None:
-        """Configure the given parameter to have different value across simulation environments.
-
-        Parameters
-        ----------
-        name : str
-            the parameter name.
-        val_list : Sequence[float]
-            the parameter values for each simulation environment.  the order of the simulation
-            environments can be found in self.sim_envs
-        precision : int
-            the parameter value will be rounded to this precision.
-        """
-        if len(self.sim_envs) != len(val_list):
-            raise ValueError(f'env parameter must have {len(self.sim_envs)} values.')
-
-        default_val = None
-        for env, val in zip(self.sim_envs, val_list):
-            cur_dict = self._env_params.get(env, None)
-            if cur_dict is None:
-                self._env_params[env] = cur_dict = {}
-
-            param_config = dict(type='single', value=val)
-            cur_dict[name] = cur_val = self._sim.format_parameter_value(param_config, precision)
-            if default_val is None:
-                default_val = cur_val
-
-        self._params[name] = default_val
-
-    def set_sweep_parameter(self, name: str, precision: int = 6, **kwargs: Any) -> None:
-        """Set to sweep the given parameter.
-
-        To set the sweep values directly:
-
-        tb.set_sweep_parameter('var', values=[1.0, 5.0, 10.0])
-
-        To set a linear sweep with start/stop/step (inclusive start and stop):
-
-        tb.set_sweep_parameter('var', start=1.0, stop=9.0, step=4.0)
-
-        To set a logarithmic sweep with points per decade (inclusive start and stop):
-
-        tb.set_sweep_parameter('var', start=1.0, stop=10.0, num_decade=3)
-
-        Parameters
-        ----------
-        name : str
-            parameter name.
-        precision : int
-            the parameter value will be rounded to this precision.
-        **kwargs : Any
-            the sweep parameters.  Refer to the above for example calls.
-        """
-        values = kwargs.get('values', None)
-        if values is not None:
-            param_config = dict(type='list', values=values)
-        else:
-            start = kwargs.get('start', None)
-            stop = kwargs.get('stop', None)
-            if start is not None and stop is not None:
-                step = kwargs.get('step', None)
-                if step is not None:
-                    param_config = dict(type='linstep', start=start, stop=stop, step=step)
-                else:
-                    num_decade = kwargs.get('num_decade', None)
-                    if num_decade is not None:
-                        param_config = dict(type='decade', start=start, stop=stop, num=num_decade)
-                    else:
-                        raise ValueError(f'Unsupported sweep arguments: {kwargs}')
-            else:
-                raise ValueError('Unsupported sweep arguments: {kwargs}')
-
-        self._params[name] = self._sim.format_parameter_value(param_config, precision)
-
-    def create_netlist(self) -> str:
-        fname = self.sim_netlist_name
-        self._sim.create_netlist(fname, self._netlist_path, self._sim_envs, self._params,
-                                 self._env_params, self._outputs)
-        return fname
-
-    def run_simulation(self, sim_tag: str = '', precision: int = 6) -> Dict[str, Any]:
-        """Run simulation.
-
-        Parameters
-        ----------
-        sim_tag : str
-            optional simulation name.  Empty for default.
-        precision : int
-            the floating point number precision.
-
-        Returns
-        -------
-        value : Optional[str]
-            the save directory path.  If simulation is cancelled, return None.
-        """
-        coro = self.async_run_simulation(sim_tag=sim_tag)
-        results = batch_async_task([coro])
-        if results is None:
-            # user cancelled
-            return {}
-        elif isinstance(results[0], Exception):
-            # an error occurred
-            raise results[0]
-        return self.load_sim_results(sim_tag, precision=precision)
-
-    def load_sim_results(self, sim_tag: str = '', precision: int = 6) -> Dict[str, Any]:
-        """Load simulation data.
-
-        Parameters
-        ----------
-        sim_tag : str
-            the simulation name.  Empty for default.
-        precision : int
-            the floating point number precision.
-
-        Returns
-        -------
-        value : Optional[str]
-            the save directory path.  If result loading is cancelled, return None.
-        """
-        return self._sim.load_results(sim_tag, precision)
-
-    async def async_run_simulation(self, sim_tag: str = '') -> None:
-        """A coroutine that runs the simulation.
-
-        Parameters
-        ----------
-        sim_tag : str
-            optional simulation name.  Empty for default.
-        """
-        fname = self.create_netlist()
-        await self._sim.async_run_simulation(fname, sim_tag)
 
 
 class BagProject(object):
@@ -293,7 +89,7 @@ class BagProject(object):
     def __init__(self) -> None:
         self.bag_config = get_bag_config()
 
-        bag_tmp_dir = os.environ.get('BAG_TEMP_DIR', None)
+        bag_tmp_dir = get_bag_tmp_dir()
         bag_work_dir = get_bag_work_dir()
 
         # get port files
@@ -321,12 +117,13 @@ class BagProject(object):
         except ValueError:
             lib_defs_file = ''
         db_cls = import_class(self.bag_config['database']['class'])
-        self.impl_db = db_cls(dealer, bag_tmp_dir, self.bag_config['database'], lib_defs_file)
+        self.impl_db: DbAccess = db_cls(dealer, bag_tmp_dir, self.bag_config['database'],
+                                        lib_defs_file)
         self._default_lib_path = self.impl_db.default_lib_path
 
         # make SimAccess instance.
         sim_cls = import_class(self.bag_config['simulation']['class'])
-        self.sim = sim_cls(bag_tmp_dir, self.bag_config['simulation'])  # type: SimAccess
+        self._sim: SimAccess = sim_cls(bag_tmp_dir, self.bag_config['simulation'])
 
     @property
     def tech_info(self) -> TechInfo:
@@ -343,19 +140,13 @@ class BagProject(object):
         return self._default_lib_path
 
     @property
-    def sim_netlist_type(self) -> DesignOutput:
-        return self.sim.netlist_type
+    def sim_access(self) -> SimAccess:
+        return self._sim
 
     def close_bag_server(self) -> None:
         """Close the BAG database server."""
         self.impl_db.close()
         self.impl_db = None
-
-    def close_sim_server(self) -> None:
-        """Close the BAG simulation server."""
-        if self.sim is not None:
-            self.sim.close()
-            self.sim = None
 
     def import_sch_cellview(self, lib_name: str, cell_name: str,
                             view_name: str = 'schematic') -> None:
