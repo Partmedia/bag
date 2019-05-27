@@ -53,19 +53,18 @@ import os
 from pathlib import Path
 
 from bag.math import float_to_si_string
-from bag.io import load_sim_results, save_sim_results, load_sim_file
+from bag.io import load_sim_file
 from bag.io.file import read_yaml, write_yaml
 from bag.layout.template import TemplateDB
 from bag.design.database import ModuleDB, ModuleType
 from bag.concurrent.core import batch_async_task
 from bag.core import BagProject
 
-from pybag.enum import DesignOutput
+from pybag.enum import DesignOutput, get_extension
 from bag_sim_test.core.mdl import MDLManager
 
 if TYPE_CHECKING:
     import numpy as np
-    from bag.core import Testbench
 
 
 class TestbenchManager(object, metaclass=abc.ABCMeta):
@@ -75,8 +74,8 @@ class TestbenchManager(object, metaclass=abc.ABCMeta):
 
     Parameters
     ----------
-    data_fname : str
-        Simulation data file name.
+    work_dir : Path
+        working directory path.
     tb_name : str
         testbench name.
     impl_lib : str
@@ -87,18 +86,26 @@ class TestbenchManager(object, metaclass=abc.ABCMeta):
         simulation view list
     env_list : Sequence[str]
         simulation environments list.
+    **kwargs : Any
+        optional arguments
     """
-    def __init__(self, data_fname: str, tb_name: str, impl_lib: str, specs: Dict[str, Any],
+
+    def __init__(self, work_dir: Path, tb_name: str, impl_lib: str, specs: Dict[str, Any],
                  sim_view_list: Sequence[Tuple[str, str]], env_list: Sequence[str],
-                 temp_list: Sequence[Union[float, int]], **kwargs) -> None:
-        self.data_fname = os.path.abspath(data_fname)
-        self.tb_name = tb_name
-        self.impl_lib = impl_lib
-        self.specs = specs
-        self.sim_view_list = sim_view_list
-        self.env_list = env_list
-        self.temp_list = temp_list
-        self.cross_prod = kwargs.get('cross_prod', False)
+                 **kwargs: Any) -> None:
+        self._work_dir = work_dir.resolve()
+        self._tb_name = tb_name
+        self._impl_lib = impl_lib
+        self._specs = specs
+        self._sim_view_list = sim_view_list
+        self._env_list = env_list
+        self._cross_prod = kwargs.get('cross_prod', False)
+
+        self._work_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def specs(self) -> Dict[str, Any]:
+        return self._specs
 
     @abc.abstractmethod
     def setup_testbench(self) -> Dict[str, Any]:
@@ -107,36 +114,36 @@ class TestbenchManager(object, metaclass=abc.ABCMeta):
         No need to call update_testbench(), set_simulation_environments(), and
         set_simulation_view().  These are called for you.
 
-        Parameters
-        ----------
+        Returns
+        -------
+        sim_specs : Dict[str, Any]
+            the simulation specification dictionary.
         """
-        pass
+        # TODO: change this to return Testbench
+        return {}
 
-    async def setup_and_simulate(self, prj: BagProject, sch_db: ModuleDB,
+    async def setup_and_simulate(self, sch_db: ModuleDB, netlist_type: DesignOutput,
                                  sch_params: Dict[str, Any], dut_cv_info_list: List[Any],
                                  dut_netlist: Path) -> Dict[str, Any]:
-
+        # TODO: remove MDL dependency
         if sch_params is None:
-            dir_name = Path('spectre_run') / self.impl_lib / '{}'.format(self.tb_name)
-            fname_scs = dir_name / '{}.scs'.format(self.tb_name)
+            fname_scs = self._work_dir / f'{self._tb_name}.{get_extension(netlist_type)}'
         else:
-            fname_scs = self._create_tb_schematic(prj, sch_db, sch_params,
+            fname_scs = self._create_tb_schematic(sch_db, netlist_type, sch_params,
                                                   dut_cv_info_list=dut_cv_info_list,
-                                                  dut_netlist=dut_netlist,)
+                                                  dut_netlist=dut_netlist)
 
-        measurement_specs = self.setup_testbench()
+        sim_specs = self.get_sim_specs()
         print('Creating MDL')
         mdl_manager = MDLManager(measurement_specs, str(fname_scs))
 
         # run simulation and save/return raw result
-        print('Simulating %s' % self.tb_name)
+        print(f'Simulating {self._tb_name}')
         # save_dir = await tb.async_run_simulation()
         mdl_manager.run()
-        print('Finished simulating %s' % self.tb_name)
+        print(f'Finished simulating {self._tb_name}')
 
-        results = mdl_manager.load_data()
-        # save_sim_results(results, self.data_fname)
-        return results
+        return mdl_manager.load_data()
 
     @classmethod
     def record_array(cls, output_dict: Dict[str, Any], data_dict: Dict[str, Any], arr: np.ndarray,
@@ -159,11 +166,9 @@ class TestbenchManager(object, metaclass=abc.ABCMeta):
         sweep_params : List[str]
             a list of sweep parameters for thhe given array.
         """
-        if 'sweep_params' in output_dict:
-            swp_info = output_dict['sweep_params']
-        else:
-            swp_info = {}
-            output_dict['sweep_params'] = swp_info
+        swp_info = output_dict.get('sweep_params', None)
+        if swp_info is None:
+            output_dict['sweep_params'] = swp_info = {}
 
         # record sweep parameters information
         for var in sweep_params:
@@ -172,15 +177,17 @@ class TestbenchManager(object, metaclass=abc.ABCMeta):
         swp_info[arr_name] = sweep_params
         output_dict[arr_name] = arr
 
-    def _create_tb_schematic(self, prj: BagProject, sch_db: ModuleDB,
+    def _create_tb_schematic(self, sch_db: ModuleDB, netlist_type: DesignOutput,
                              sch_params: Mapping[str, Any], dut_cv_info_list: List[Any],
                              dut_netlist: Path) -> Path:
         """Helper method to create a testbench schematic.
 
         Parameters
         ----------
-        prj : BagProject
-            the BagProject instance.
+        sch_db : ModuleDB
+            the schematic database.
+        netlist_type: DesignOutput
+            the simulation netlist type.
         sch_params : Dict[str, Any]
             the testbench schematic parameters dictionary.
         dut_cv_info_list : List[str]
@@ -193,23 +200,22 @@ class TestbenchManager(object, metaclass=abc.ABCMeta):
         fname_scs : Path
             the simulation Testbench Spectre netlist.
         """
-        tb_lib = self.specs['tb_lib']
-        tb_cell = self.specs['tb_cell']
+        tb_lib: str = self._specs['tb_lib']
+        tb_cell: str = self._specs['tb_cell']
+
         gen_cls = cast(Type[ModuleType], ModuleDB.get_schematic_class(tb_lib, tb_cell))
         sch_master = sch_db.new_master(gen_cls, sch_params)
-        print('Creating testbench schematic')
-        sch_db.batch_schematic([(sch_master, self.tb_name)], cv_info_out=dut_cv_info_list)
-        print('Testbench schematic done')
+        print(f'Creating testbench {self._tb_name} schematic master')
+        sch_db.batch_schematic([(sch_master, self._tb_name)], cv_info_out=dut_cv_info_list)
+        print(f'Testbench {self._tb_name} schematic master done')
 
         # create Spectre netlist for tb schematic
-        dir_name = Path('spectre_run') / self.impl_lib / '{}'.format(self.tb_name)
-        fname_scs = dir_name / '{}.scs'.format(self.tb_name)
-        dir_name.mkdir(parents=True, exist_ok=True)
-        print('Creating testbench netlist')
-        sch_db.batch_schematic([(sch_master, self.tb_name)], output=DesignOutput.SPECTRE,
+        fname_scs = self._work_dir / f'{self._tb_name}.{get_extension(netlist_type)}'
+        print(f'Creating testbench {self._tb_name} netlist')
+        sch_db.batch_schematic([(sch_master, self._tb_name)], output=netlist_type,
                                top_subckt=False, fname=str(fname_scs),
                                cv_info_list=dut_cv_info_list, cv_netlist=str(dut_netlist))
-        print('Testbench Spectre netlist done')
+        print(f'Testbench {self._tb_name} netlisting done')
 
         return fname_scs
 
@@ -241,11 +247,12 @@ class MeasurementManager(object, metaclass=abc.ABCMeta):
     env_list : Sequence[str]
         simulation environments list.
     """
-    def __init__(self: MeasurementManager, data_dir: str, meas_name: str, impl_lib: str,
+
+    def __init__(self, data_dir: str, meas_name: str, impl_lib: str,
                  specs: Dict[str, Any], wrapper_lookup: Dict[str, str],
                  sim_view_list: Sequence[Tuple[str, str]], env_list: Sequence[str],
                  temp_list: Sequence[Union[float, int]], **kwargs) -> None:
-        self.data_dir = os.path.abspath(data_dir)
+        self.dir_path = Path(data_dir)
         self.impl_lib = impl_lib
         self.meas_name = meas_name
         self.specs = specs
@@ -263,7 +270,7 @@ class MeasurementManager(object, metaclass=abc.ABCMeta):
         return ''
 
     # noinspection PyUnusedLocal
-    def get_testbench_info(self: MeasurementManager, state: str,
+    def get_testbench_info(self, state: str,
                            prev_output: Optional[Dict[str, Any]]
                            ) -> Tuple[str, str, Dict[str, Any], Optional[Dict[str, Any]]]:
         """Get information about the next testbench.
@@ -327,7 +334,7 @@ class MeasurementManager(object, metaclass=abc.ABCMeta):
         return '%s_TB_%s' % (self.meas_name, tb_type)
 
     async def async_measure_performance(self, prj: BagProject, sch_db: ModuleDB,
-                                        dut_cv_info_list: List[Any], dut_netlist: Path,
+                                        dut_cvi_list: List[Any], dut_netlist: Path,
                                         load_from_file: bool = False) -> Dict[str, Any]:
         """A coroutine that performs measurement.
 
@@ -341,7 +348,7 @@ class MeasurementManager(object, metaclass=abc.ABCMeta):
         prj : BagProject
             the BagProject instance.
         sch_db : ModuleDB
-        dut_cv_info_list : List[str]
+        dut_cvi_list : List[str]
             cv_info for DUT cell (Spectre netlist)
         dut_netlist : Path
             Spectre netlist of DUT cell
@@ -380,11 +387,11 @@ class MeasurementManager(object, metaclass=abc.ABCMeta):
                 else:
                     print('Cannot find data file, simulating...')
                     cur_results = await tb_manager.setup_and_simulate(prj, sch_db, tb_sch_params,
-                                                                  dut_cv_info_list=dut_cv_info_list,
-                                                                      dut_netlist=dut_netlist,)
+                                                                      dut_cv_info_list=dut_cvi_list,
+                                                                      dut_netlist=dut_netlist, )
             else:
                 cur_results = await tb_manager.setup_and_simulate(prj, sch_db, tb_sch_params,
-                                                                  dut_cv_info_list=dut_cv_info_list,
+                                                                  dut_cv_info_list=dut_cvi_list,
                                                                   dut_netlist=dut_netlist,
                                                                   )
 
@@ -444,7 +451,7 @@ class DesignManager(object):
 
     Parameters
     ----------
-    prj : Optional[BagProject]
+    prj : BagProject
         The BagProject instance.
     spec_file : str
         the specification file name or the data directory.
@@ -454,6 +461,7 @@ class DesignManager(object):
                  lay_db: Optional[TemplateDB] = None) -> None:
         self.prj = prj
         self._specs = None
+        self._root_dir = ''
 
         if os.path.isfile(spec_file):
             self._specs = read_yaml(spec_file)
@@ -543,8 +551,8 @@ class DesignManager(object):
         print('RCX passed on %s' % dsn_name)
 
     async def verify_design(self, lib_name: str, dsn_name: str,
-                            dut_cv_info_list: List[Any], dut_netlist: Path,
-                            load_from_file: bool = False,) -> None:
+                            dut_cvi_list: List[Any], dut_netlist: Path,
+                            load_from_file: bool = False, ) -> None:
         """Run all measurements on the given design.
 
         Parameters
@@ -553,7 +561,7 @@ class DesignManager(object):
             library name.
         dsn_name : str
             design cell name.
-        dut_cv_info_list : List[str]
+        dut_cvi_list : List[str]
             cv_info for DUT cell (Spectre netlist)
         dut_netlist : Path
             Spectre netlist of DUT cell
@@ -591,7 +599,7 @@ class DesignManager(object):
                                     cross_prod=cross_prod)
             print('Performing measurement %s on %s' % (meas_name, dsn_name))
             meas_res = await meas_manager.async_measure_performance(self.prj, self._sch_db,
-                                                                  dut_cv_info_list=dut_cv_info_list,
+                                                                    dut_cvi_list=dut_cvi_list,
                                                                     dut_netlist=dut_netlist,
                                                                     load_from_file=load_from_file)
             print('Measurement %s finished on %s' % (meas_name, dsn_name))
@@ -610,7 +618,7 @@ class DesignManager(object):
             await self.extract_design(lib_name, dsn_name, rcx_params, netlist=dut_cdl_netlist)
         if measure:
             await self.verify_design(lib_name, dsn_name, load_from_file=load_from_file,
-                                     dut_cv_info_list=dut_cv_info_list, dut_netlist=dut_scs_netlist)
+                                     dut_cvi_list=dut_cv_info_list, dut_netlist=dut_scs_netlist)
 
     def characterize_designs(self, generate: bool = True, measure: bool = True,
                              load_from_file: bool = False) -> None:
@@ -687,9 +695,6 @@ class DesignManager(object):
     def create_designs(self, create_layout: bool) -> [List[str], Path, Path]:
         """Create DUT schematics/layouts.
         """
-        if self.prj is None:
-            raise ValueError('BagProject instance is not given.')
-
         # make layouts
         dsn_name_list, lay_params_list, combo_list_list = [], [], []
         for combo_list in self.get_combinations_iter():
@@ -709,8 +714,8 @@ class DesignManager(object):
 
         print('creating all schematics.')
         dut_cv_info_list, dut_cdl_netlist, dut_scs_netlist = self.create_dut_schematics(
-                                                                   sch_params_list, dsn_name_list,
-                                                                   self._sch_db, gen_wrappers=True)
+            sch_params_list, dsn_name_list,
+            self._sch_db, gen_wrappers=True)
 
         print('design generation done.')
         return dut_cv_info_list, dut_cdl_netlist, dut_scs_netlist
@@ -808,7 +813,7 @@ class DesignManager(object):
         dut_fname_scs = dir_name / '{}.scs'.format(dut_cell)
         dir_name.mkdir(parents=True, exist_ok=True)
         print('Creating DUT Spectre netlist')
-        sch_db.batch_schematic(info_list, output=DesignOutput.SPECTRE, top_subckt=True,
+        sch_db.batch_schematic(info_list, output=self.prj.sim_netlist_type, top_subckt=True,
                                cv_info_out=dut_cv_info_list, fname=str(dut_fname_scs))
         print('DUT Spectre netlist done')
 
@@ -825,9 +830,6 @@ class DesignManager(object):
                            cell_name_list: Sequence[str], temp_db: TemplateDB
                            ) -> Sequence[Dict[str, Any]]:
         """Create multiple layouts"""
-        if self.prj is None:
-            raise ValueError('BagProject instance is not given.')
-
         cls_package = self.specs['layout_package']
         cls_name = self.specs['layout_class']
 

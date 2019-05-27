@@ -443,25 +443,26 @@ class BagProject(object):
         return self._grid
 
     @property
-    def default_lib_path(self):
-        # type: () -> str
+    def default_lib_path(self) -> str:
         return self._default_lib_path
 
-    def close_bag_server(self):
-        # type: () -> None
+    @property
+    def sim_netlist_type(self) -> DesignOutput:
+        return self.sim.netlist_type
+
+    def close_bag_server(self) -> None:
         """Close the BAG database server."""
         self.impl_db.close()
         self.impl_db = None
 
-    def close_sim_server(self):
-        # type: () -> None
+    def close_sim_server(self) -> None:
         """Close the BAG simulation server."""
         if self.sim is not None:
             self.sim.close()
             self.sim = None
 
-    def import_sch_cellview(self, lib_name, cell_name, view_name='schematic'):
-        # type: (str, str, str) -> None
+    def import_sch_cellview(self, lib_name: str, cell_name: str,
+                            view_name: str = 'schematic') -> None:
         """Import the given schematic and symbol template into Python.
 
         This import process is done recursively.

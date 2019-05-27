@@ -51,9 +51,13 @@ from typing import Dict, Optional, Sequence, Any, Tuple, Union
 
 import abc
 
+from pybag.enum import DesignOutput
+
 from ..io import make_temp_dir
 from ..concurrent.core import SubProcessManager
 from .base import InterfaceBase
+
+ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], Optional[str], str]
 
 
 class SimAccess(InterfaceBase, abc.ABC):
@@ -73,6 +77,11 @@ class SimAccess(InterfaceBase, abc.ABC):
 
         self.sim_config = sim_config
         self.tmp_dir = make_temp_dir('simTmp', parent_dir=tmp_dir)
+
+    @property
+    @abc.abstractmethod
+    def netlist_type(self) -> DesignOutput:
+        return DesignOutput.CDL
 
     @abc.abstractmethod
     def format_parameter_value(self, param_config, precision):
@@ -162,9 +171,6 @@ class SimAccess(InterfaceBase, abc.ABC):
             the save directory path.
         """
         pass
-
-
-ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], Optional[str], str]
 
 
 class SimProcessManager(SimAccess, metaclass=abc.ABCMeta):
