@@ -29,6 +29,7 @@ from ..io.file import read_yaml, open_file
 from .data import (
     MDSweepInfo, MDArray, SetSweepInfo, SweepLinear, SweepLog, SweepList
 )
+from .analysis import AnalysisInfo
 from .base import SimProcessManager, get_corner_temp
 
 if TYPE_CHECKING:
@@ -70,10 +71,10 @@ def _write_sweep_start(lines: List[str], swp_info: SweepInfo, swp_idx: int, prec
                 val_str = f'[{tmp}]'
             elif isinstance(swp_spec, SweepLinear):
                 # spectre: stop is inclusive, lin = number of points excluding the last point
-                val_str = f'start={swp_spec.start} stop={swp_spec.stop} lin={swp_spec.num - 1}'
+                val_str = f'start={swp_spec.start} stop={swp_spec.stop_inc} lin={swp_spec.num - 1}'
             elif isinstance(swp_spec, SweepLog):
                 # spectre: stop is inclusive, log = number of points excluding the last point
-                val_str = f'start={swp_spec.start} stop={swp_spec.stop} log={swp_spec.num - 1}'
+                val_str = f'start={swp_spec.start} stop={swp_spec.stop_inc} log={swp_spec.num - 1}'
             else:
                 raise ValueError('Unknown sweep specification.')
 
@@ -104,7 +105,7 @@ class SpectreInterface(SimProcessManager):
         return DesignOutput.SPECTRE
 
     def create_netlist(self, output_file: str, sch_netlist: Path,
-                       analyses: Dict[str, Dict[str, Any]], sim_envs: Sequence[str],
+                       analyses: Sequence[AnalysisInfo], sim_envs: Sequence[str],
                        params: Dict[str, float], swp_info: SweepInfo,
                        env_params: Dict[str, Sequence[float]], outputs: Dict[str, str],
                        precision: int = 6, **kwargs: Any) -> None:

@@ -19,7 +19,7 @@ This module defines SimAccess, which provides methods to run simulations
 and retrieve results.
 """
 
-from typing import Sequence, Tuple, Union, Iterable, List, Dict
+from typing import Tuple, Union, Iterable, List, Dict, Any
 
 import math
 from enum import Enum
@@ -30,18 +30,15 @@ import numpy as np
 from ..util.immutable import ImmutableList
 
 
-class SweepTypes(Enum):
+class SweepType(Enum):
     LIST = 0
     LINEAR = 1
     LOG = 2
 
 
-@dataclass(eq=True, frozen=True, init=False)
+@dataclass(eq=True, frozen=True)
 class SweepList:
     values: ImmutableList[float]
-
-    def __init__(self, values: Sequence[float]) -> None:
-        object.__setattr__(self, 'values', ImmutableList(values))
 
     @property
     def start(self) -> float:
@@ -54,10 +51,16 @@ class SweepLinear:
     start: float
     stop: float
     num: int
+    endpoint: bool = True
 
     @property
     def step(self) -> float:
-        return (self.stop - self.start) / (self.num - 1)
+        den = self.num - 1 if self.endpoint else self.num
+        return (self.stop - self.start) / den
+
+    @property
+    def stop_inc(self) -> float:
+        return self.stop if self.endpoint else self.start + (self.num - 1) * self.step
 
 
 @dataclass(eq=True, frozen=True)
@@ -66,6 +69,7 @@ class SweepLog:
     start: float
     stop: float
     num: int
+    endpoint: bool = True
 
     @property
     def start_log(self) -> float:
@@ -77,18 +81,34 @@ class SweepLog:
 
     @property
     def step_log(self) -> float:
-        return (self.stop_log - self.start_log) / (self.num - 1)
+        den = self.num - 1 if self.endpoint else self.num
+        return (self.stop_log - self.start_log) / den
+
+    @property
+    def stop_inc(self) -> float:
+        if self.endpoint:
+            return self.stop
+        return 10.0**(self.start_log + (self.num - 1) * self.step_log)
 
 
 SweepSpec = Union[SweepLinear, SweepLog, SweepList]
 
 
+def swp_spec_from_dict(table: Dict[str, Any]) -> SweepSpec:
+    swp_type = SweepType[table['type']]
+    if swp_type is SweepType.LIST:
+        return SweepList(ImmutableList(table['values']))
+    elif swp_type is SweepType.LINEAR:
+        return SweepLinear(table['start'], table['stop'], table['num'], table.get('endpoint', True))
+    elif swp_type is SweepType.LOG:
+        return SweepLog(table['start'], table['stop'], table['num'], table.get('endpoint', True))
+    else:
+        raise ValueError(f'Unsupported sweep type: {swp_type}')
+
+
 @dataclass(eq=True, frozen=True)
 class MDSweepInfo:
     params: ImmutableList[Tuple[str, SweepSpec]]
-
-    def __init__(self, params: Sequence[Tuple[str, SweepSpec]]) -> None:
-        object.__setattr__(self, 'params', ImmutableList(params))
 
     @property
     def ndim(self) -> int:
@@ -104,24 +124,28 @@ class SetSweepInfo:
     params: ImmutableList[str]
     values: ImmutableList[Tuple[float, ...]]
 
-    def __init__(self, params: Sequence[str], values: Sequence[Sequence[float]]) -> None:
-        object.__setattr__(self, 'params', ImmutableList(params))
-
-        val_list = []
-        num_par = len(params)
-        for combo in values:
-            if len(combo) != num_par:
-                raise ValueError('Invalid param set values.')
-            val_list.append(tuple(combo))
-
-        object.__setattr__(self, 'values', ImmutableList(val_list))
-
     def default_items(self) -> Iterable[Tuple[str, float]]:
         for idx, name in enumerate(self.params):
             yield name, self.values[0][idx]
 
 
 SweepInfo = Union[MDSweepInfo, SetSweepInfo]
+
+
+def swp_info_from_dict(table: Union[List[Any], Dict[str, Any]]) -> SweepInfo:
+    if isinstance(table, dict):
+        params = ImmutableList(table['params'])
+        values = []
+        num_par = len(params)
+        for combo in table['values']:
+            if len(combo) != num_par:
+                raise ValueError('Invalid param set values.')
+            values.append(tuple(combo))
+
+        return SetSweepInfo(params, ImmutableList(values))
+    else:
+        par_list = [(par, swp_spec_from_dict(spec)) for par, spec in table]
+        return MDSweepInfo(ImmutableList(par_list))
 
 
 class MDArray:
