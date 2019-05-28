@@ -26,10 +26,10 @@ from srr_pybind11 import load_md_array
 
 from ..data.core import MDArray
 from ..io.file import read_yaml, open_file
-from .simulator import SimProcessManager, get_corner_temp
+from .simulator import SimProcessManager, get_corner_temp, MDSweepInfo
 
 if TYPE_CHECKING:
-    from .simulator import ProcInfo
+    from .simulator import ProcInfo, SweepInfo
 
 
 def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -> None:
@@ -60,7 +60,7 @@ class SpectreInterface(SimProcessManager):
     # TODO: figure out sweep params spec
     def create_netlist(self, output_file: str, sch_netlist: Path,
                        analyses: Dict[str, Dict[str, Any]], sim_envs: Sequence[str],
-                       params: Dict[str, float], swp_params: Sequence[Tuple[str, Sequence[float]]],
+                       params: Dict[str, float], swp_info: SweepInfo,
                        env_params: Dict[str, Sequence[float]], outputs: Dict[str, str],
                        precision: int = 6, **kwargs: Any) -> None:
         if not sim_envs:
@@ -80,8 +80,8 @@ class SpectreInterface(SimProcessManager):
 
         for par in sorted(params.keys()):
             lines.append(param_fmt.format(par, params[par]))
-        for par in sorted(swp_params.keys()):
-            lines.append(param_fmt.format(par, swp_params[par][0]))
+        for par, val in swp_info.default_items():
+            lines.append(param_fmt.format(par, val))
         for par in env_param_keys:
             lines.append(param_fmt.format(par, env_params[par][0]))
 
@@ -96,6 +96,11 @@ class SpectreInterface(SimProcessManager):
             lines.append('}')
 
             # write sweep statements
+            if isinstance(swp_info, MDSweepInfo):
+                pass
+            else:
+                # TODO: support this
+                raise ValueError('Sweeping param set not supported yet.')
 
     def load_md_array(self, dir_path: Path, sim_tag: str, precision: int) -> MDArray:
         dir_name = str(dir_path.resolve() / f'{sim_tag}.raw')

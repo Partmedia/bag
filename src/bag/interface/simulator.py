@@ -47,15 +47,19 @@ This module defines SimAccess, which provides methods to run simulations
 and retrieve results.
 """
 
-from typing import Dict, Optional, Sequence, Any, Tuple, Union
+from typing import Dict, Optional, Sequence, Any, Tuple, Union, Iterable
 
 import abc
+import math
+from enum import Enum
 from pathlib import Path
+from dataclasses import dataclass
 
 from pybag.enum import DesignOutput
 
 from ..data.core import MDArray
 from ..concurrent.core import SubProcessManager
+from ..util.immutable import ImmutableList
 from .base import InterfaceBase
 
 ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], str]
@@ -66,6 +70,149 @@ def get_corner_temp(env_str: str) -> Tuple[str, int]:
     if idx < 0:
         raise ValueError(f'Invalid environment string: {env_str}')
     return env_str[:idx], int(env_str[idx + 1:])
+
+
+class SweepTypes(Enum):
+    LINEAR = 0
+    LINEAR_STEP = 1
+    LOG = 2
+    LOG_DEC = 3
+    LIST = 4
+
+
+@dataclass(eq=True, frozen=True)
+class SweepLinear:
+    start: float
+    stop: float
+    num: int
+
+    @property
+    def step(self) -> float:
+        return (self.stop - self.start) / self.num
+
+    @property
+    def stop_include(self) -> float:
+        return self.start + (self.num - 1) * self.step
+
+
+@dataclass(eq=True, frozen=True)
+class SweepLinearStep:
+    start: float
+    stop: float
+    step: float
+
+    @property
+    def num(self) -> int:
+        return int(math.ceil((self.stop - self.start) / self.step))
+
+    @property
+    def stop_include(self) -> float:
+        return self.start + (self.num - 1) * self.step
+
+
+@dataclass(eq=True, frozen=True)
+class SweepLog:
+    start: float
+    stop: float
+    num: int
+
+    @property
+    def start_log(self) -> float:
+        return math.log10(self.start)
+
+    @property
+    def stop_log(self) -> float:
+        return math.log10(self.stop)
+
+    @property
+    def step_log(self) -> float:
+        return (self.stop_log - self.start_log) / self.num
+
+    @property
+    def stop_include(self) -> float:
+        return 10.0**(self.start_log + (self.num - 1) * self.step_log)
+
+
+@dataclass(eq=True, frozen=True)
+class SweepLog:
+    start: float
+    stop: float
+    num: int
+
+    @property
+    def start_log(self) -> float:
+        return math.log10(self.start)
+
+    @property
+    def stop_log(self) -> float:
+        return math.log10(self.stop)
+
+    @property
+    def step_log(self) -> float:
+        return (self.stop_log - self.start_log) / self.num
+
+    @property
+    def stop_include(self) -> float:
+        return 10.0**(self.start_log + (self.num - 1) * self.step_log)
+
+
+@dataclass(eq=True, frozen=True)
+class SweepLogDec:
+    start: float
+    stop: float
+    dec: int
+
+
+@dataclass(eq=True, frozen=True, init=False)
+class SweepList:
+    values: ImmutableList[float]
+
+    def __init__(self, values: Sequence[float]) -> None:
+        object.__setattr__(self, 'values', ImmutableList(values))
+
+    @property
+    def start(self) -> float:
+        return self.values[0]
+
+
+SweepSpec = Union[SweepLinear, SweepLinearStep, SweepLog, SweepLogDec, SweepList]
+
+
+@dataclass(eq=True, frozen=True)
+class MDSweepInfo:
+    params: ImmutableList[Tuple[str, SweepSpec]]
+
+    def __init__(self, params: Sequence[Tuple[str, SweepSpec]]) -> None:
+        object.__setattr__(self, 'params', ImmutableList(params))
+
+    def default_items(self) -> Iterable[Tuple[str, float]]:
+        for name, spec in self.params:
+            yield name, spec.start
+
+
+@dataclass(eq=True, frozen=True)
+class SetSweepInfo:
+    params: ImmutableList[str]
+    values: ImmutableList[Tuple[float, ...]]
+
+    def __init__(self, params: Sequence[str], values: Sequence[Sequence[float]]) -> None:
+        object.__setattr__(self, 'params', ImmutableList(params))
+
+        val_list = []
+        num_par = len(params)
+        for combo in values:
+            if len(combo) != num_par:
+                raise ValueError('Invalid param set values.')
+            val_list.append(tuple(combo))
+
+        object.__setattr__(self, 'values', ImmutableList(val_list))
+
+    def default_items(self) -> Iterable[Tuple[str, float]]:
+        for idx, name in enumerate(self.params):
+            yield name, self.values[0][idx]
+
+
+SweepInfo = Union[MDSweepInfo, SetSweepInfo]
 
 
 class SimAccess(InterfaceBase, abc.ABC):
@@ -93,7 +240,7 @@ class SimAccess(InterfaceBase, abc.ABC):
     @abc.abstractmethod
     def create_netlist(self, output_file: str, sch_netlist: Path,
                        analyses: Dict[str, Dict[str, Any]], sim_envs: Sequence[str],
-                       params: Dict[str, float], swp_params: Dict[str, Sequence[float]],
+                       params: Dict[str, float], swp_info: SweepInfo,
                        env_params: Dict[str, Sequence[float]], outputs: Dict[str, str],
                        precision: int = 6, **kwargs: Any) -> None:
         pass
