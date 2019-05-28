@@ -119,7 +119,7 @@ def readlines_iter(fname: str) -> Iterable[str]:
             yield line
 
 
-def read_yaml(fname: str) -> Any:
+def read_yaml(fname: Union[str, Path]) -> Any:
     """Read the given file using YAML.
 
     Parameters

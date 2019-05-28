@@ -81,7 +81,7 @@ class SimAccess(abc.ABC):
 
     def __init__(self, parent: str, sim_config: Dict[str, Any]) -> None:
         self._config = sim_config
-        self._dir_path = Path(parent) / "simulations"
+        self._dir_path = (Path(parent) / "simulations").resolve()
 
     @property
     @abc.abstractmethod

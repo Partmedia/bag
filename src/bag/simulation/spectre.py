@@ -223,8 +223,10 @@ class SpectreInterface(SimProcessManager):
                 lines.append('}')
 
     def load_md_array(self, dir_path: Path, sim_tag: str, precision: int) -> MDArray:
-        dir_name = str(dir_path.resolve() / f'{sim_tag}.raw')
-        env_list, data = load_md_array(dir_name)
+        dir_path = dir_path.resolve() / f'{sim_tag}.raw'
+        if not dir_path.exists():
+            raise FileNotFoundError(f'Cannot find simulation data directory: {dir_path}')
+        env_list, data = load_md_array_wrapper(str(dir_path))
         return MDArray(env_list, data)
 
     def setup_sim_process(self, netlist: str, sim_tag: str) -> ProcInfo:
