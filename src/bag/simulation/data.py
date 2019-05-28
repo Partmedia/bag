@@ -31,94 +31,9 @@ from ..util.immutable import ImmutableList
 
 
 class SweepTypes(Enum):
-    LINEAR = 0
-    LINEAR_STEP = 1
+    LIST = 0
+    LINEAR = 1
     LOG = 2
-    LOG_DEC = 3
-    LIST = 4
-
-
-@dataclass(eq=True, frozen=True)
-class SweepLinear:
-    start: float
-    stop: float
-    num: int
-
-    @property
-    def step(self) -> float:
-        return (self.stop - self.start) / self.num
-
-    @property
-    def stop_include(self) -> float:
-        return self.start + (self.num - 1) * self.step
-
-
-@dataclass(eq=True, frozen=True)
-class SweepLinearStep:
-    start: float
-    stop: float
-    step: float
-
-    @property
-    def num(self) -> int:
-        return int(math.ceil((self.stop - self.start) / self.step))
-
-    @property
-    def stop_include(self) -> float:
-        return self.start + (self.num - 1) * self.step
-
-
-@dataclass(eq=True, frozen=True)
-class SweepLog:
-    start: float
-    stop: float
-    num: int
-
-    @property
-    def start_log(self) -> float:
-        return math.log10(self.start)
-
-    @property
-    def stop_log(self) -> float:
-        return math.log10(self.stop)
-
-    @property
-    def step_log(self) -> float:
-        return (self.stop_log - self.start_log) / self.num
-
-    @property
-    def stop_include(self) -> float:
-        return 10.0**(self.start_log + (self.num - 1) * self.step_log)
-
-
-@dataclass(eq=True, frozen=True)
-class SweepLog:
-    start: float
-    stop: float
-    num: int
-
-    @property
-    def start_log(self) -> float:
-        return math.log10(self.start)
-
-    @property
-    def stop_log(self) -> float:
-        return math.log10(self.stop)
-
-    @property
-    def step_log(self) -> float:
-        return (self.stop_log - self.start_log) / self.num
-
-    @property
-    def stop_include(self) -> float:
-        return 10.0**(self.start_log + (self.num - 1) * self.step_log)
-
-
-@dataclass(eq=True, frozen=True)
-class SweepLogDec:
-    start: float
-    stop: float
-    dec: int
 
 
 @dataclass(eq=True, frozen=True, init=False)
@@ -133,7 +48,39 @@ class SweepList:
         return self.values[0]
 
 
-SweepSpec = Union[SweepLinear, SweepLinearStep, SweepLog, SweepLogDec, SweepList]
+@dataclass(eq=True, frozen=True)
+class SweepLinear:
+    """stop is inclusive"""
+    start: float
+    stop: float
+    num: int
+
+    @property
+    def step(self) -> float:
+        return (self.stop - self.start) / (self.num - 1)
+
+
+@dataclass(eq=True, frozen=True)
+class SweepLog:
+    """stop is inclusive"""
+    start: float
+    stop: float
+    num: int
+
+    @property
+    def start_log(self) -> float:
+        return math.log10(self.start)
+
+    @property
+    def stop_log(self) -> float:
+        return math.log10(self.stop)
+
+    @property
+    def step_log(self) -> float:
+        return (self.stop_log - self.start_log) / (self.num - 1)
+
+
+SweepSpec = Union[SweepLinear, SweepLog, SweepList]
 
 
 @dataclass(eq=True, frozen=True)
@@ -142,6 +89,10 @@ class MDSweepInfo:
 
     def __init__(self, params: Sequence[Tuple[str, SweepSpec]]) -> None:
         object.__setattr__(self, 'params', ImmutableList(params))
+
+    @property
+    def ndim(self) -> int:
+        return len(self.params)
 
     def default_items(self) -> Iterable[Tuple[str, float]]:
         for name, spec in self.params:

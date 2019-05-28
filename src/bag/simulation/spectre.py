@@ -24,8 +24,11 @@ from pathlib import Path
 from pybag.enum import DesignOutput
 from srr_pybind11 import load_md_array
 
-from bag.io.file import read_yaml, open_file
-from .data import MDSweepInfo, MDArray
+from ..math import float_to_si_string
+from ..io.file import read_yaml, open_file
+from .data import (
+    MDSweepInfo, MDArray, SetSweepInfo, SweepLinear, SweepLog, SweepList
+)
 from .base import SimProcessManager, get_corner_temp
 
 if TYPE_CHECKING:
@@ -37,6 +40,48 @@ def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -
     for fname, section in models:
         lines.append(f'include "{fname}" section={section}')
     lines.append(f'tempOption options temp={temp}')
+
+
+def _write_param_set(lines: List[str], params: Sequence[str], values: Sequence[Tuple[float, ...]],
+                     precision: int) -> None:
+    # get list of lists of strings to print, and compute column widths
+    data = [params]
+    col_widths = [len(par) for par in params]
+    for combo in values:
+        str_list = []
+        for idx, val in enumerate(combo):
+            cur_str = float_to_si_string(val, precision)
+            col_widths[idx] = max(col_widths[idx], len(cur_str))
+            str_list.append(cur_str)
+        data.append(str_list)
+
+    # write the columns
+    lines.append('swp_data paramset {')
+    for row in data:
+        lines.append(' '.join(val.ljust(width) for val, width in zip(row, col_widths)))
+    lines.append('}')
+
+
+def _write_sweep_start(lines: List[str], swp_info: SweepInfo, swp_idx: int, precision: int) -> int:
+    if isinstance(swp_info, MDSweepInfo):
+        for dim_idx, (par, swp_spec) in enumerate(swp_info.params):
+            if isinstance(swp_spec, SweepList):
+                tmp = ' '.join((float_to_si_string(val, precision) for val in swp_spec.values))
+                val_str = f'[{tmp}]'
+            elif isinstance(swp_spec, SweepLinear):
+                # spectre: stop is inclusive, lin = number of points excluding the last point
+                val_str = f'start={swp_spec.start} stop={swp_spec.stop} lin={swp_spec.num - 1}'
+            elif isinstance(swp_spec, SweepLog):
+                # spectre: stop is inclusive, log = number of points excluding the last point
+                val_str = f'start={swp_spec.start} stop={swp_spec.stop} log={swp_spec.num - 1}'
+            else:
+                raise ValueError('Unknown sweep specification.')
+
+            lines.append(f'swp{swp_idx}{dim_idx} sweep param={par} {val_str} {{')
+        return swp_info.ndim
+    else:
+        lines.append(f'swp{swp_idx} sweep paramset=swp_data {{')
+        return 1
 
 
 class SpectreInterface(SimProcessManager):
@@ -58,7 +103,6 @@ class SpectreInterface(SimProcessManager):
     def netlist_type(self) -> DesignOutput:
         return DesignOutput.SPECTRE
 
-    # TODO: figure out sweep params spec
     def create_netlist(self, output_file: str, sch_netlist: Path,
                        analyses: Dict[str, Dict[str, Any]], sim_envs: Sequence[str],
                        params: Dict[str, float], swp_info: SweepInfo,
@@ -76,15 +120,19 @@ class SpectreInterface(SimProcessManager):
         lines.append('')
 
         # write parameters
-        param_fmt = 'parameters {}={:.%dg}' % precision
+        param_fmt = 'parameters {}={}'
         env_param_keys = sorted(env_params.keys())
 
         for par in sorted(params.keys()):
-            lines.append(param_fmt.format(par, params[par]))
+            lines.append(param_fmt.format(par, float_to_si_string(params[par], precision)))
         for par, val in swp_info.default_items():
-            lines.append(param_fmt.format(par, val))
+            lines.append(param_fmt.format(par, float_to_si_string(val, precision)))
         for par in env_param_keys:
-            lines.append(param_fmt.format(par, env_params[par][0]))
+            lines.append(param_fmt.format(par, float_to_si_string(env_params[par][0], precision)))
+
+        if isinstance(swp_info, SetSweepInfo):
+            # write paramset declaration if needed
+            _write_param_set(lines, swp_info.params, swp_info.values, precision)
 
         # write statements for each simulation environment
         for idx, sim_env in enumerate(sim_envs):
@@ -97,11 +145,14 @@ class SpectreInterface(SimProcessManager):
             lines.append('}')
 
             # write sweep statements
-            if isinstance(swp_info, MDSweepInfo):
-                pass
-            else:
-                # TODO: support this
-                raise ValueError('Sweeping param set not supported yet.')
+            num_brackets = _write_sweep_start(lines, swp_info, idx, precision)
+
+            # write analyses
+            # TODO: implement this
+
+            # close sweep statements
+            for _ in range(num_brackets):
+                lines.append('}')
 
     def load_md_array(self, dir_path: Path, sim_tag: str, precision: int) -> MDArray:
         dir_name = str(dir_path.resolve() / f'{sim_tag}.raw')
