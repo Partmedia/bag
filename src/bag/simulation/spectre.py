@@ -20,21 +20,49 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Dict, Any, Sequence, Optional, List, Tuple
 
 from pathlib import Path
+from multiprocessing import Process, Queue
+
+import numpy as np
 
 from pybag.enum import DesignOutput
 from srr_pybind11 import load_md_array
 
 from ..math import float_to_si_string
 from ..io.file import read_yaml, open_file
-from ..util.immutable import ImmutableList
+from ..util.immutable import ImmutableList, ImmutableSortedDict
 from .data import (
-    MDSweepInfo, MDArray, SetSweepInfo, SweepLinear, SweepLog, SweepList, SimNetlistInfo
+    MDSweepInfo, MDArray, SetSweepInfo, SweepLinear, SweepLog, SweepList, SimNetlistInfo, SweepSpec,
+    AnalysisInfo, AnalysisAC, AnalysisSP, AnalysisNoise, AnalysisTran, AnalysisSweep1D
 )
 from .base import SimProcessManager, get_corner_temp
 
 if TYPE_CHECKING:
     from .data import SweepInfo
     from .base import ProcInfo
+
+
+def load_md_array_queue(dir_name: str, q: Queue) -> None:
+    # noinspection PyBroadException
+    try:
+        result = load_md_array(dir_name)
+    except Exception as e:
+        result = str(e)
+
+    q.put(result)
+
+
+def load_md_array_wrapper(dir_name: str) -> Tuple[List[str],
+                                                  Dict[str, Tuple[Dict[str, np.ndarray],
+                                                                  Dict[str, List[str]]]]]:
+    # Use multi-processing to make sure licenses get checked in
+    q = Queue()
+    p = Process(target=load_md_array_queue, args=(dir_name, q))
+    p.start()
+    result = q.get()
+    p.join()
+    if isinstance(result, str):
+        raise RuntimeError(result)
+    return result
 
 
 def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -> None:
@@ -63,26 +91,65 @@ def _write_param_set(lines: List[str], params: Sequence[str],
     lines.append('}')
 
 
+def _get_sweep_str(par: str, swp_spec: Optional[SweepSpec], precision: int) -> str:
+    if not par or swp_spec is None:
+        return ''
+
+    if isinstance(swp_spec, SweepList):
+        tmp = ' '.join((float_to_si_string(val, precision) for val in swp_spec.values))
+        val_str = f'[{tmp}]'
+    elif isinstance(swp_spec, SweepLinear):
+        # spectre: stop is inclusive, lin = number of points excluding the last point
+        val_str = f'start={swp_spec.start} stop={swp_spec.stop_inc} lin={swp_spec.num - 1}'
+    elif isinstance(swp_spec, SweepLog):
+        # spectre: stop is inclusive, log = number of points excluding the last point
+        val_str = f'start={swp_spec.start} stop={swp_spec.stop_inc} log={swp_spec.num - 1}'
+    else:
+        raise ValueError('Unknown sweep specification.')
+
+    return f'param={par} {val_str}'
+
+
+def _get_options_str(options: ImmutableSortedDict[str, str]) -> str:
+    return ' '.join((f'{key}={val}' for key, val in options.items()))
+
+
 def _write_sweep_start(lines: List[str], swp_info: SweepInfo, swp_idx: int, precision: int) -> int:
     if isinstance(swp_info, MDSweepInfo):
         for dim_idx, (par, swp_spec) in enumerate(swp_info.params):
-            if isinstance(swp_spec, SweepList):
-                tmp = ' '.join((float_to_si_string(val, precision) for val in swp_spec.values))
-                val_str = f'[{tmp}]'
-            elif isinstance(swp_spec, SweepLinear):
-                # spectre: stop is inclusive, lin = number of points excluding the last point
-                val_str = f'start={swp_spec.start} stop={swp_spec.stop_inc} lin={swp_spec.num - 1}'
-            elif isinstance(swp_spec, SweepLog):
-                # spectre: stop is inclusive, log = number of points excluding the last point
-                val_str = f'start={swp_spec.start} stop={swp_spec.stop_inc} log={swp_spec.num - 1}'
-            else:
-                raise ValueError('Unknown sweep specification.')
-
-            lines.append(f'swp{swp_idx}{dim_idx} sweep param={par} {val_str} {{')
+            statement = _get_sweep_str(par, swp_spec, precision)
+            lines.append(f'swp{swp_idx}{dim_idx} sweep {statement} {{')
         return swp_info.ndim
     else:
         lines.append(f'swp{swp_idx} sweep paramset=swp_data {{')
         return 1
+
+
+def _write_analysis(lines: List[str], sim_env: str, ana: AnalysisInfo, precision: int) -> None:
+    cur_line = f'\\@{ana.name}\\@{sim_env}\\@ {ana.name}'
+    if isinstance(ana, AnalysisTran):
+        cur_line += f' start={ana.start} stop={ana.stop} strobeperiod={ana.strobe}'
+    elif isinstance(ana, AnalysisSweep1D):
+        par = ana.param
+        sweep_str = _get_sweep_str(par, ana.sweep, precision)
+        cur_line += ' '
+        cur_line += sweep_str
+        if isinstance(ana, AnalysisAC) and par != 'freq':
+            cur_line += f' freq={float_to_si_string(ana.freq, precision)}'
+
+        if isinstance(ana, AnalysisSP):
+            cur_line += f' ports=[{" ".join(ana.ports)}] paramtype={ana.param_type.name}'
+        elif isinstance(ana, AnalysisNoise):
+            cur_line += f' oprobe=[{ana.out_probe}] iprobe={ana.in_probe}'
+    else:
+        raise ValueError('Unknown analysis specification.')
+
+    opt_str = _get_options_str(ana.options)
+    if opt_str:
+        cur_line += ' '
+        cur_line += opt_str
+
+    lines.append(cur_line)
 
 
 class SpectreInterface(SimProcessManager):
@@ -148,7 +215,8 @@ class SpectreInterface(SimProcessManager):
             num_brackets = _write_sweep_start(lines, swp_info, idx, precision)
 
             # write analyses
-            # TODO: implement this
+            for ana in analyses:
+                _write_analysis(lines, sim_env, ana, precision)
 
             # close sweep statements
             for _ in range(num_brackets):

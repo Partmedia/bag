@@ -196,12 +196,18 @@ class AnalysisSweep1D:
 
 @dataclass(eq=True, frozen=True)
 class AnalysisDC(AnalysisSweep1D):
-    pass
+    @property
+    def name(self) -> str:
+        return 'dc'
 
 
 @dataclass(eq=True, frozen=True)
 class AnalysisAC(AnalysisSweep1D):
     freq: float
+
+    @property
+    def name(self) -> str:
+        return 'ac'
 
     @classmethod
     def from_dict(cls: Type[T], table: Dict[str, Any], def_param: str = '') -> T:
@@ -219,11 +225,19 @@ class AnalysisSP(AnalysisAC):
     ports: ImmutableList[str]
     param_type: SPType
 
+    @property
+    def name(self) -> str:
+        return 'sp'
+
 
 @dataclass(eq=True, frozen=True)
 class AnalysisNoise(AnalysisAC):
     out_probe: str
     in_probe: str
+
+    @property
+    def name(self) -> str:
+        return 'noise'
 
 
 @dataclass(eq=True, frozen=True)
@@ -232,6 +246,10 @@ class AnalysisTran:
     stop: float
     strobe: float
     options: ImmutableSortedDict[str, str]
+
+    @property
+    def name(self) -> str:
+        return 'tran'
 
 
 AnalysisInfo = Union[AnalysisDC, AnalysisAC, AnalysisSP, AnalysisNoise, AnalysisTran]
