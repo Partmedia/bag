@@ -24,12 +24,13 @@ from pathlib import Path
 from pybag.enum import DesignOutput
 from srr_pybind11 import load_md_array
 
-from ..data.core import MDArray
-from ..io.file import read_yaml, open_file
-from .simulator import SimProcessManager, get_corner_temp, MDSweepInfo
+from bag.io.file import read_yaml, open_file
+from .data import MDSweepInfo, MDArray
+from .base import SimProcessManager, get_corner_temp
 
 if TYPE_CHECKING:
-    from .simulator import ProcInfo, SweepInfo
+    from .data import SweepInfo
+    from .base import ProcInfo
 
 
 def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -> None:

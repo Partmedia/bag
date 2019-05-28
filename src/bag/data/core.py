@@ -44,56 +44,10 @@
 """This module defines core data post-processing classes.
 """
 
-from typing import List, Dict, Tuple
-
 import numpy as np
 import scipy.interpolate as interp
 import scipy.cluster.vq as svq
 import scipy.optimize as sciopt
-
-from ..util.immutable import ImmutableList
-
-
-class MDArray:
-    """A data structure that stores simulation data as a multi-dimensional array."""
-
-    def __init__(self, env_list: List[str],
-                 data: Dict[str, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]]) -> None:
-        self._corners = ImmutableList(env_list)
-        self._corners_arr = np.array(env_list)
-        self._master_table = data
-
-        if self._master_table:
-            self._cur_key = next(iter(self._master_table.keys()))
-            tmp = self._master_table[self._cur_key]
-            self._cur_data: Dict[str, np.ndarray] = tmp[0]
-            self._cur_swp_params: Dict[str, List[str]] = tmp[1]
-        else:
-            raise ValueError('Empty simulation data.')
-
-    @property
-    def analysis(self) -> str:
-        return self._cur_key
-
-    @property
-    def env_list(self) -> ImmutableList[str]:
-        return self._corners
-
-    def __getitem__(self, item: str) -> np.ndarray:
-        if item == 'corner':
-            return self._corners_arr
-        return self._cur_data[item]
-
-    def get_swp_params(self, item: str) -> ImmutableList[str]:
-        return ImmutableList(self._cur_swp_params[item])
-
-    def set_analysis(self, val: str) -> None:
-        if val not in self._master_table:
-            raise ValueError(f'Analysis {val} not found.')
-        self._cur_key = val
-        tmp = self._master_table[self._cur_key]
-        self._cur_data: Dict[str, np.ndarray] = tmp[0]
-        self._cur_swp_params: Dict[str, List[str]] = tmp[1]
 
 
 class Waveform(object):

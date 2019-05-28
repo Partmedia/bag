@@ -64,7 +64,7 @@ from .env import (
 from .util.importlib import import_class
 
 if TYPE_CHECKING:
-    from .interface.simulator import SimAccess
+    from .simulation.base import SimAccess
     from .interface.database import DbAccess
     from .layout.template import TemplateBase
     from .design.module import Module
