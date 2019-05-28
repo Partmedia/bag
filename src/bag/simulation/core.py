@@ -107,6 +107,10 @@ class TestbenchManager(abc.ABC):
     def specs(self) -> Dict[str, Any]:
         return self._specs
 
+    @property
+    def sim_envs(self) -> Sequence[str]:
+        return self._env_list
+
     @abc.abstractmethod
     def get_netlist_info(self) -> SimNetlistInfo:
         """Configure the simulation state of the given testbench.
@@ -294,6 +298,14 @@ class MeasurementManager(abc.ABC):
             a dictionary containing post-processed data.
         """
         return False, '', {}
+
+    @property
+    def specs(self) -> Dict[str, Any]:
+        return self._specs
+
+    @property
+    def data_dir(self) -> Path:
+        return self._dir_path
 
     def get_testbench_name(self, tb_type: str) -> str:
         """Returns a default testbench name given testbench type."""
