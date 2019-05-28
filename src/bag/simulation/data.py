@@ -19,7 +19,7 @@ This module defines SimAccess, which provides methods to run simulations
 and retrieve results.
 """
 
-from typing import Tuple, Union, Iterable, List, Dict, Any
+from typing import Tuple, Union, Iterable, List, Dict, Any, Optional, TypeVar, Type
 
 import math
 from enum import Enum
@@ -27,8 +27,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..util.immutable import ImmutableList
+from ..util.immutable import ImmutableList, ImmutableSortedDict
 
+
+###############################################################################
+# Sweep specifications
+###############################################################################
 
 class SweepType(Enum):
     LIST = 0
@@ -122,7 +126,7 @@ class MDSweepInfo:
 @dataclass(eq=True, frozen=True)
 class SetSweepInfo:
     params: ImmutableList[str]
-    values: ImmutableList[Tuple[float, ...]]
+    values: ImmutableList[ImmutableList[float]]
 
     def default_items(self) -> Iterable[Tuple[str, float]]:
         for idx, name in enumerate(self.params):
@@ -132,7 +136,7 @@ class SetSweepInfo:
 SweepInfo = Union[MDSweepInfo, SetSweepInfo]
 
 
-def swp_info_from_dict(table: Union[List[Any], Dict[str, Any]]) -> SweepInfo:
+def swp_info_from_struct(table: Union[List[Any], Dict[str, Any]]) -> SweepInfo:
     if isinstance(table, dict):
         params = ImmutableList(table['params'])
         values = []
@@ -140,13 +144,165 @@ def swp_info_from_dict(table: Union[List[Any], Dict[str, Any]]) -> SweepInfo:
         for combo in table['values']:
             if len(combo) != num_par:
                 raise ValueError('Invalid param set values.')
-            values.append(tuple(combo))
+            values.append(ImmutableList(combo))
 
         return SetSweepInfo(params, ImmutableList(values))
     else:
         par_list = [(par, swp_spec_from_dict(spec)) for par, spec in table]
         return MDSweepInfo(ImmutableList(par_list))
 
+
+###############################################################################
+# Analyses
+###############################################################################
+
+class AnalysisType(Enum):
+    DC = 0
+    AC = 1
+    TRAN = 2
+    SP = 3
+    NOISE = 4
+
+
+class SPType(Enum):
+    S = 0
+    Y = 1
+    Z = 2
+    YZ = 3
+
+
+T = TypeVar('T', bound='AnalysisSweep1D')
+
+
+@dataclass(eq=True, frozen=True)
+class AnalysisSweep1D:
+    param: str
+    sweep: Optional[SweepSpec]
+    options: ImmutableSortedDict[str, str]
+
+    @classmethod
+    def from_dict(cls: Type[T], table: Dict[str, Any], def_param: str = '') -> T:
+        param = table.get('param', def_param)
+        sweep = table.get('sweep', None)
+        opt = table.get('options', {})
+        if not param or sweep is None:
+            param = ''
+            swp = None
+        else:
+            swp = swp_spec_from_dict(sweep)
+
+        return cls(param, swp, ImmutableSortedDict(opt))
+
+
+@dataclass(eq=True, frozen=True)
+class AnalysisDC(AnalysisSweep1D):
+    pass
+
+
+@dataclass(eq=True, frozen=True)
+class AnalysisAC(AnalysisSweep1D):
+    freq: float
+
+    @classmethod
+    def from_dict(cls: Type[T], table: Dict[str, Any], def_param: str = '') -> T:
+        base = AnalysisSweep1D.from_dict(table, def_param='freq')
+        if base.param != 'freq':
+            freq_val = table['freq']
+        else:
+            freq_val = 0.0
+
+        return cls(base.param, base.sweep, base.options, freq_val)
+
+
+@dataclass(eq=True, frozen=True)
+class AnalysisSP(AnalysisAC):
+    ports: ImmutableList[str]
+    param_type: SPType
+
+
+@dataclass(eq=True, frozen=True)
+class AnalysisNoise(AnalysisAC):
+    out_probe: str
+    in_probe: str
+
+
+@dataclass(eq=True, frozen=True)
+class AnalysisTran:
+    start: float
+    stop: float
+    strobe: float
+    options: ImmutableSortedDict[str, str]
+
+
+AnalysisInfo = Union[AnalysisDC, AnalysisAC, AnalysisSP, AnalysisNoise, AnalysisTran]
+
+
+def analysis_from_dict(table: Dict[str, Any]) -> AnalysisInfo:
+    ana_type = AnalysisType[table['type']]
+    if ana_type is AnalysisType.DC:
+        return AnalysisDC.from_dict(table)
+    elif ana_type is AnalysisType.AC:
+        return AnalysisAC.from_dict(table)
+    elif ana_type is AnalysisType.SP:
+        base = AnalysisAC.from_dict(table)
+        return AnalysisSP(base.param, base.sweep, base.options, base.freq,
+                          ImmutableList(table['ports']), SPType[table['param_type']])
+    elif ana_type is AnalysisType.NOISE:
+        base = AnalysisAC.from_dict(table)
+        return AnalysisNoise(base.param, base.sweep, base.options, base.freq,
+                             table['out_probe'], table['in_probe'])
+    elif ana_type is AnalysisType.TRAN:
+        return AnalysisTran(table.get('start', 0.0), table['stop'], table.get('strobe', 0.0),
+                            ImmutableSortedDict(table.get('options', {})))
+    else:
+        raise ValueError(f'Unknown analysis type: {ana_type}')
+
+
+###############################################################################
+# Simulation Netlist Info
+###############################################################################
+
+@dataclass(eq=True, frozen=True)
+class SimNetlistInfo:
+    sim_envs: ImmutableList[str]
+    analyses: ImmutableList[AnalysisInfo]
+    params: ImmutableSortedDict[str, float]
+    env_params: ImmutableSortedDict[str, ImmutableList[float]]
+    swp_info: SweepInfo
+    outputs: ImmutableSortedDict[str, str]
+    options: ImmutableSortedDict[str, Any]
+
+
+def netlist_info_from_dict(table: Dict[str, Any]) -> SimNetlistInfo:
+    sim_envs = table['sim_envs']
+    analyses = table['analyses']
+    params = table.get('params', {})
+    env_params = table.get('env_params', {})
+    swp_info = table.get('swp_info', [])
+    outputs = table.get('outputs', {})
+    options = table.get('options', {})
+
+    if not sim_envs:
+        raise ValueError('simulation environments list is empty')
+
+    env_par_dict = {}
+    num_env = len(sim_envs)
+    for key, val in env_params.items():
+        if len(val) != num_env:
+            raise ValueError("Invalid env_param value.")
+        env_par_dict[key] = ImmutableList(val)
+
+    ana_list = [analysis_from_dict(val) for val in analyses]
+
+    return SimNetlistInfo(ImmutableList(sim_envs), ImmutableList(ana_list),
+                          ImmutableSortedDict(params), ImmutableSortedDict(env_par_dict),
+                          swp_info_from_struct(swp_info), ImmutableSortedDict(outputs),
+                          ImmutableSortedDict(options))
+
+
+###############################################################################
+# Simulation data classes
+###############################################################################
 
 class MDArray:
     """A data structure that stores simulation data as a multi-dimensional array."""

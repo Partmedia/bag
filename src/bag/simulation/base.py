@@ -56,8 +56,7 @@ from pathlib import Path
 from pybag.enum import DesignOutput
 
 from ..concurrent.core import SubProcessManager
-from .data import SweepInfo, MDArray
-from .analysis import AnalysisInfo
+from .data import SimNetlistInfo, MDArray
 
 ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], str]
 
@@ -90,11 +89,8 @@ class SimAccess(abc.ABC):
         return DesignOutput.CDL
 
     @abc.abstractmethod
-    def create_netlist(self, output_file: str, sch_netlist: Path,
-                       analyses: Sequence[AnalysisInfo], sim_envs: Sequence[str],
-                       params: Dict[str, float], swp_info: SweepInfo,
-                       env_params: Dict[str, Sequence[float]], outputs: Dict[str, str],
-                       precision: int = 6, **kwargs: Any) -> None:
+    def create_netlist(self, output_file: str, sch_netlist: Path, info: SimNetlistInfo,
+                       precision: int = 6) -> None:
         pass
 
     @abc.abstractmethod

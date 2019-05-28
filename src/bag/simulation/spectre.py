@@ -26,10 +26,10 @@ from srr_pybind11 import load_md_array
 
 from ..math import float_to_si_string
 from ..io.file import read_yaml, open_file
+from ..util.immutable import ImmutableList
 from .data import (
-    MDSweepInfo, MDArray, SetSweepInfo, SweepLinear, SweepLog, SweepList
+    MDSweepInfo, MDArray, SetSweepInfo, SweepLinear, SweepLog, SweepList, SimNetlistInfo
 )
-from .analysis import AnalysisInfo
 from .base import SimProcessManager, get_corner_temp
 
 if TYPE_CHECKING:
@@ -43,8 +43,8 @@ def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -
     lines.append(f'tempOption options temp={temp}')
 
 
-def _write_param_set(lines: List[str], params: Sequence[str], values: Sequence[Tuple[float, ...]],
-                     precision: int) -> None:
+def _write_param_set(lines: List[str], params: Sequence[str],
+                     values: Sequence[ImmutableList[float]], precision: int) -> None:
     # get list of lists of strings to print, and compute column widths
     data = [params]
     col_widths = [len(par) for par in params]
@@ -104,13 +104,14 @@ class SpectreInterface(SimProcessManager):
     def netlist_type(self) -> DesignOutput:
         return DesignOutput.SPECTRE
 
-    def create_netlist(self, output_file: str, sch_netlist: Path,
-                       analyses: Sequence[AnalysisInfo], sim_envs: Sequence[str],
-                       params: Dict[str, float], swp_info: SweepInfo,
-                       env_params: Dict[str, Sequence[float]], outputs: Dict[str, str],
-                       precision: int = 6, **kwargs: Any) -> None:
-        if not sim_envs:
-            raise ValueError('simulation environments list is empty')
+    def create_netlist(self, output_file: str, sch_netlist: Path, info: SimNetlistInfo,
+                       precision: int = 6) -> None:
+        sim_envs = info.sim_envs
+        analyses = info.analyses
+        params = info.params
+        env_params = info.env_params
+        swp_info = info.swp_info
+
         def_corner, def_temp = get_corner_temp(sim_envs[0])
 
         with open_file(sch_netlist, 'r') as f:
@@ -122,14 +123,12 @@ class SpectreInterface(SimProcessManager):
 
         # write parameters
         param_fmt = 'parameters {}={}'
-        env_param_keys = sorted(env_params.keys())
-
-        for par in sorted(params.keys()):
-            lines.append(param_fmt.format(par, float_to_si_string(params[par], precision)))
+        for par, val in params.items():
+            lines.append(param_fmt.format(par, float_to_si_string(val, precision)))
         for par, val in swp_info.default_items():
             lines.append(param_fmt.format(par, float_to_si_string(val, precision)))
-        for par in env_param_keys:
-            lines.append(param_fmt.format(par, float_to_si_string(env_params[par][0], precision)))
+        for par, val_list in env_params.items():
+            lines.append(param_fmt.format(par, float_to_si_string(val_list[0], precision)))
 
         if isinstance(swp_info, SetSweepInfo):
             # write paramset declaration if needed
@@ -141,8 +140,8 @@ class SpectreInterface(SimProcessManager):
             corner, temp = get_corner_temp(sim_env)
             lines.append(f'{sim_env} altergroup {{')
             _write_sim_env(lines, self._model_setup[corner], temp)
-            for par in env_param_keys:
-                lines.append(param_fmt.format(par, env_params[par][idx]))
+            for par, val_list in env_params.items():
+                lines.append(param_fmt.format(par, val_list[idx]))
             lines.append('}')
 
             # write sweep statements
