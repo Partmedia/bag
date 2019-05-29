@@ -34,10 +34,15 @@ from ..util.immutable import ImmutableList, ImmutableSortedDict
 # Sweep specifications
 ###############################################################################
 
-class SweepType(Enum):
+class SweepSpecType(Enum):
     LIST = 0
     LINEAR = 1
     LOG = 2
+
+
+class SweepInfoType(Enum):
+    MD = 0
+    SET = 1
 
 
 @dataclass(eq=True, frozen=True)
@@ -99,12 +104,12 @@ SweepSpec = Union[SweepLinear, SweepLog, SweepList]
 
 
 def swp_spec_from_dict(table: Dict[str, Any]) -> SweepSpec:
-    swp_type = SweepType[table['type']]
-    if swp_type is SweepType.LIST:
+    swp_type = SweepSpecType[table['type']]
+    if swp_type is SweepSpecType.LIST:
         return SweepList(ImmutableList(table['values']))
-    elif swp_type is SweepType.LINEAR:
+    elif swp_type is SweepSpecType.LINEAR:
         return SweepLinear(table['start'], table['stop'], table['num'], table.get('endpoint', True))
-    elif swp_type is SweepType.LOG:
+    elif swp_type is SweepSpecType.LOG:
         return SweepLog(table['start'], table['stop'], table['num'], table.get('endpoint', True))
     else:
         raise ValueError(f'Unsupported sweep type: {swp_type}')
@@ -118,6 +123,10 @@ class MDSweepInfo:
     def ndim(self) -> int:
         return len(self.params)
 
+    @property
+    def stype(self) -> SweepInfoType:
+        return SweepInfoType.MD
+
     def default_items(self) -> Iterable[Tuple[str, float]]:
         for name, spec in self.params:
             yield name, spec.start
@@ -127,6 +136,10 @@ class MDSweepInfo:
 class SetSweepInfo:
     params: ImmutableList[str]
     values: ImmutableList[ImmutableList[float]]
+
+    @property
+    def stype(self) -> SweepInfoType:
+        return SweepInfoType.SET
 
     def default_items(self) -> Iterable[Tuple[str, float]]:
         for idx, name in enumerate(self.params):
@@ -290,6 +303,10 @@ class SimNetlistInfo:
     outputs: ImmutableSortedDict[str, str]
     options: ImmutableSortedDict[str, Any]
 
+    @property
+    def sweep_type(self) -> SweepInfoType:
+        return self.swp_info.stype
+
 
 def netlist_info_from_dict(table: Dict[str, Any]) -> SimNetlistInfo:
     sim_envs = table['sim_envs']
@@ -355,6 +372,10 @@ class MDArray:
 
     def __contains__(self, item: str) -> bool:
         return item == 'corner' or item in self._cur_data
+
+    def analysis_iter(self) -> Iterable[AnalysisType]:
+        for key in self._master_table.keys():
+            yield AnalysisType[key.upper()]
 
     def get_swp_params(self, item: str) -> ImmutableList[str]:
         return ImmutableList(self._cur_swp_params[item])

@@ -141,11 +141,11 @@ class TestbenchManager(abc.ABC):
         self._sim.create_netlist(output_file, tb_netlist_path, netlist_info, self._precision)
         # run simulation and save/return raw result
         print(f'Simulating {self._tb_name}')
-        await self._sim.async_run_simulation(output_file, self._tb_name)
+        await self._sim.async_run_simulation(output_file, self._tb_name, netlist_info.sweep_type)
         print(f'Finished simulating {self._tb_name}')
 
     def load_md_array(self) -> MDArray:
-        return self._sim.load_md_array(self._work_dir, self._tb_name, self._precision)
+        return self._sim.load_md_array(self._work_dir, self._tb_name)
 
     def _create_tb_schematic(self, sch_db: ModuleDB, sch_params: Mapping[str, Any],
                              dut_cv_info_list: List[Any], dut_netlist: Path) -> Path:

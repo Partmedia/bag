@@ -56,7 +56,7 @@ from pathlib import Path
 from pybag.enum import DesignOutput
 
 from ..concurrent.core import SubProcessManager
-from .data import SimNetlistInfo, MDArray
+from .data import SimNetlistInfo, MDArray, SweepInfoType
 
 ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], str]
 
@@ -94,7 +94,7 @@ class SimAccess(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def load_md_array(self, dir_path: Path, sim_tag: str, precision: int) -> MDArray:
+    def load_md_array(self, dir_path: Path, sim_tag: str) -> MDArray:
         """Load simulation results.
 
         Parameters
@@ -103,8 +103,6 @@ class SimAccess(abc.ABC):
             the working directory path.
         sim_tag : str
             optional simulation name.  Empty for default.
-        precision : int
-            the floating point number precision.
 
         Returns
         -------
@@ -114,7 +112,7 @@ class SimAccess(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def async_run_simulation(self, netlist: str, sim_tag: str) -> None:
+    async def async_run_simulation(self, netlist: str, sim_tag: str, stype: SweepInfoType) -> None:
         """A coroutine for simulation a testbench.
 
         Parameters
@@ -123,6 +121,8 @@ class SimAccess(abc.ABC):
             the netlist file name.
         sim_tag : str
             optional simulation name.  Empty for default.
+        stype : SweepInfoType
+            the parameter sweep type.
         """
         pass
 
@@ -178,8 +178,3 @@ class SimProcessManager(SimAccess, abc.ABC):
             working directory for the subprocess.
         """
         return '', '', None, ''
-
-    async def async_run_simulation(self, netlist: str, sim_tag: str) -> None:
-        args, log, env, cwd = self.setup_sim_process(netlist, sim_tag)
-
-        await self._manager.async_new_subprocess(args, log, env=env, cwd=cwd)

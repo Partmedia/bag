@@ -19,10 +19,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, Any, Sequence, Optional, List, Tuple
 
+import asyncio
 from pathlib import Path
-from multiprocessing import Process, Queue
-
-import numpy as np
+from concurrent.futures import ProcessPoolExecutor
 
 from pybag.enum import DesignOutput
 from srr_pybind11 import load_md_array
@@ -31,38 +30,21 @@ from ..math import float_to_si_string
 from ..io.file import read_yaml, open_file
 from ..util.immutable import ImmutableList, ImmutableSortedDict
 from .data import (
-    MDSweepInfo, MDArray, SetSweepInfo, SweepLinear, SweepLog, SweepList, SimNetlistInfo, SweepSpec,
-    AnalysisInfo, AnalysisAC, AnalysisSP, AnalysisNoise, AnalysisTran, AnalysisSweep1D
+    MDSweepInfo, MDArray, SetSweepInfo, SweepLinear, SweepLog, SweepList, SimNetlistInfo,
+    SweepSpec, AnalysisInfo, AnalysisAC, AnalysisSP, AnalysisNoise, AnalysisTran,
+    AnalysisSweep1D, SweepInfoType
 )
 from .base import SimProcessManager, get_corner_temp
+from .hdf5 import save_md_array_hdf5, load_md_array_hdf5
 
 if TYPE_CHECKING:
     from .data import SweepInfo
     from .base import ProcInfo
 
 
-def load_md_array_queue(dir_name: str, q: Queue) -> None:
-    # noinspection PyBroadException
-    try:
-        result = load_md_array(dir_name)
-    except Exception as e:
-        result = str(e)
-
-    q.put(result)
-
-
-def load_md_array_wrapper(dir_name: str) -> Tuple[List[str],
-                                                  Dict[str, Tuple[Dict[str, np.ndarray],
-                                                                  Dict[str, List[str]]]]]:
-    # Use multi-processing to make sure licenses get checked in
-    q = Queue()
-    p = Process(target=load_md_array_queue, args=(dir_name, q))
-    p.start()
-    result = q.get()
-    p.join()
-    if isinstance(result, str):
-        raise RuntimeError(result)
-    return result
+def write_md_array_hdf5(hdf5_path: Path, dir_name: str) -> None:
+    env_list, data_dict = load_md_array(dir_name)
+    save_md_array_hdf5(env_list, data_dict, hdf5_path)
 
 
 def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -> None:
@@ -222,18 +204,14 @@ class SpectreInterface(SimProcessManager):
             for _ in range(num_brackets):
                 lines.append('}')
 
-    def load_md_array(self, dir_path: Path, sim_tag: str, precision: int) -> MDArray:
-        dir_path = dir_path.resolve() / f'{sim_tag}.raw'
-        if not dir_path.exists():
-            raise FileNotFoundError(f'Cannot find simulation data directory: {dir_path}')
-        env_list, data = load_md_array_wrapper(str(dir_path))
-        return MDArray(env_list, data)
+    def load_md_array(self, dir_path: Path, sim_tag: str) -> MDArray:
+        hdf5_path = dir_path / f'{sim_tag}.hdf5'
+        return load_md_array_hdf5(hdf5_path)
 
     def setup_sim_process(self, netlist: str, sim_tag: str) -> ProcInfo:
         sim_kwargs: Dict[str, Any] = self.config['kwargs']
         cmd_str: str = sim_kwargs.get('command', 'spectre')
         env: Optional[Dict[str, str]] = sim_kwargs.get('env', None)
-        cwd: str = sim_kwargs.get('cwd', '')
         run_64: bool = sim_kwargs.get('run_64', True)
         fmt: str = sim_kwargs.get('format', 'psfxl')
         psf_version: str = sim_kwargs.get('psfversion', '1.1')
@@ -246,12 +224,24 @@ class SpectreInterface(SimProcessManager):
         if run_64:
             sim_cmd.append('-64')
 
-        if not cwd:
-            # make sure working directory to netlist directory if None
-            cwd_path = Path(netlist).resolve().parent
-        else:
-            cwd_path = Path(cwd)
-
+        cwd_path = Path(netlist).parent.resolve()
         # create empty log file to make sure it exists.
         log_path = cwd_path / 'spectre_output.log'
         return sim_cmd, str(log_path), env, str(cwd_path)
+
+    async def async_run_simulation(self, netlist: str, sim_tag: str, stype: SweepInfoType) -> None:
+        args, log, env, cwd = self.setup_sim_process(netlist, sim_tag)
+
+        # TODO: change implementation to move HDF5 writing to C++
+        await self._manager.async_new_subprocess(args, log, env=env, cwd=cwd)
+
+        cwd_path = Path(cwd)
+        raw_path = cwd_path / f'{sim_tag}.raw'
+        if not raw_path.exists():
+            raise FileNotFoundError(f'Cannot find simulation data directory: {raw_path}')
+
+        loop = asyncio.get_running_loop()
+        with ProcessPoolExecutor() as pool:
+            if stype:
+                hdf5_path = cwd_path / f'{sim_tag}_md.hdf5'
+                await loop.run_in_executor(pool, write_md_array_hdf5, (hdf5_path, str(raw_path)))
