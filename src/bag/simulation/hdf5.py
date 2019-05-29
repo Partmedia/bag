@@ -20,13 +20,10 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from ..util.immutable import ImmutableList
-from .data import MDArray, AnalysisType
+from .data import MDArray
 
 
-def save_md_array_hdf5(sim_envs: List[str],
-                       data: Dict[str, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]],
-                       hdf5_path: Path, compression='lzf') -> None:
+def save_md_array_hdf5(data: MDArray, hdf5_path: Path, compression='lzf') -> None:
     """Saves the given MDArray as a HDF5 file.
 
     The simulation environments are stored as fixed length byte strings,
@@ -34,8 +31,6 @@ def save_md_array_hdf5(sim_envs: List[str],
 
     Parameters
     ----------
-    sim_envs : List[str]
-        list of simulation environments.
     data: MDArray
         the data.
     hdf5_path: Path
@@ -47,15 +42,16 @@ def save_md_array_hdf5(sim_envs: List[str],
     hdf5_path.parent.mkdir(parents=True, exist_ok=True)
 
     with h5py.File(str(hdf5_path), 'w', libver='latest') as f:
-        f.create_dataset('corner', data=np.array(sim_envs, dtype='S'))
-        for analysis, (arr_dict, swp_dict) in data.items():
-            grp = f.create_group(analysis)
-            for name, arr in arr_dict:
-                grp.create_dataset(name, data=arr, chunks=True, compression=compression)
-            for name, var_list in swp_dict:
-                dset = grp[name]
-                for idx, var in enumerate(var_list):
-                    dset.dims[idx].label = var
+        f.create_dataset('corner', data=np.array(data.sim_envs, dtype='S'))
+        for group in data.group_list:
+            data.open_group(group)
+            grp = f.create_group(group)
+            for name, arr in data.items():
+                dset = grp.create_dataset(name, data=arr, chunks=True, compression=compression)
+                var_list = data.get_swp_params(name)
+                if var_list:
+                    for idx, var in enumerate(var_list):
+                        dset.dims[idx].label = var
 
 
 def load_md_array_hdf5(path: Path) -> MDArray:
@@ -75,8 +71,8 @@ def load_md_array_hdf5(path: Path) -> MDArray:
         raise ValueError(f'{path} is not a file.')
 
     with h5py.File(str(path), 'r') as f:
-        sim_envs = ImmutableList(f['corner'][:].astype('U').tolist())
-        data: Dict[AnalysisType, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]] = {}
+        sim_envs = f['corner'][:].astype('U').tolist()
+        data: Dict[str, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]] = {}
         for analysis, grp in f.items():
             if analysis != 'corner':
                 arr_dict: Dict[str, np.ndarray] = {}
@@ -87,5 +83,5 @@ def load_md_array_hdf5(path: Path) -> MDArray:
                         # has sweep parameters
                         swp_dict[name] = [d.label for d in dset.dims]
 
-                data[AnalysisType[analysis.upper()]] = (arr_dict, swp_dict)
+                data[analysis] = (arr_dict, swp_dict)
         return MDArray(sim_envs, data)

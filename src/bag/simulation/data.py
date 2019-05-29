@@ -19,7 +19,9 @@ This module defines SimAccess, which provides methods to run simulations
 and retrieve results.
 """
 
-from typing import Tuple, Union, Iterable, List, Dict, Any, Optional, TypeVar, Type
+from typing import (
+    Tuple, Union, Iterable, List, Dict, Any, Optional, TypeVar, Type, Sequence, ItemsView
+)
 
 import math
 from enum import Enum
@@ -342,23 +344,27 @@ def netlist_info_from_dict(table: Dict[str, Any]) -> SimNetlistInfo:
 class MDArray:
     """A data structure that stores simulation data as a multi-dimensional array."""
 
-    def __init__(self, sim_envs: ImmutableList[str],
-                 data: Dict[AnalysisType, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]]
+    def __init__(self, sim_envs: Sequence[str],
+                 data: Dict[str, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]]
                  ) -> None:
-        self._corners = sim_envs
+        self._corners = ImmutableList(sim_envs)
         self._master_table = data
 
         if self._master_table:
-            self._cur_analysis = next(iter(self._master_table.keys()))
-            tmp = self._master_table[self._cur_analysis]
+            self._cur_name = next(iter(self._master_table.keys()))
+            tmp = self._master_table[self._cur_name]
             self._cur_data: Dict[str, np.ndarray] = tmp[0]
             self._cur_swp_params: Dict[str, List[str]] = tmp[1]
         else:
             raise ValueError('Empty simulation data.')
 
     @property
-    def analysis(self) -> AnalysisType:
-        return self._cur_analysis
+    def group(self) -> str:
+        return self._cur_name
+
+    @property
+    def group_list(self) -> List[str]:
+        return list(self._master_table.keys())
 
     @property
     def sim_envs(self) -> ImmutableList[str]:
@@ -368,17 +374,26 @@ class MDArray:
         return self._cur_data[item]
 
     def __contains__(self, item: str) -> bool:
-        return item == 'corner' or item in self._cur_data
+        return item in self._cur_data
 
-    def get_swp_params(self, item: str) -> ImmutableList[str]:
-        return ImmutableList(self._cur_swp_params[item])
+    def items(self) -> ItemsView[str, np.ndarray]:
+        return self._cur_data.items()
 
-    def set_analysis(self, val: AnalysisType) -> None:
+    def get_swp_params(self, item: str) -> Optional[ImmutableList[str]]:
+        tmp = self._cur_swp_params.get(item, None)
+        if tmp:
+            return ImmutableList(tmp)
+        return None
+
+    def open_group(self, val: str) -> None:
         tmp = self._master_table.get(val, None)
         if tmp is None:
-            raise ValueError(f'Analysis {val} not found.')
-        self._cur_analysis = val
+            raise ValueError(f'Group {val} not found.')
+        self._cur_name = val
         self._cur_data, self._cur_swp_params = tmp
+
+    def open_analysis(self, atype: AnalysisType) -> None:
+        self.open_group(atype.name.lower())
 
     def insert(self, name: str, data: np.ndarray, swp_vars: List[str]) -> None:
         for idx, var in enumerate(swp_vars):

@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 def write_md_array_hdf5(hdf5_path: Path, dir_name: str) -> None:
     env_list, data_dict = load_md_array(dir_name)
-    save_md_array_hdf5(env_list, data_dict, hdf5_path)
+    save_md_array_hdf5(MDArray(env_list, data_dict), hdf5_path)
 
 
 def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -> None:
