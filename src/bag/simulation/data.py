@@ -359,7 +359,7 @@ class MDArray:
     """A data structure that stores simulation data as a multi-dimensional array."""
 
     def __init__(self, sim_envs: Sequence[str],
-                 data: Dict[str, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]]
+                 data: Dict[str, Tuple[Dict[str, np.ndarray], Dict[str, Sequence[str]]]]
                  ) -> None:
         self._corners = ImmutableList(sim_envs)
         self._master_table = data
@@ -368,7 +368,7 @@ class MDArray:
             self._cur_name = next(iter(self._master_table.keys()))
             tmp = self._master_table[self._cur_name]
             self._cur_data: Dict[str, np.ndarray] = tmp[0]
-            self._cur_swp_params: Dict[str, List[str]] = tmp[1]
+            self._cur_swp_params: Dict[str, Sequence[str]] = tmp[1]
         else:
             raise ValueError('Empty simulation data.')
 
@@ -409,12 +409,16 @@ class MDArray:
     def open_analysis(self, atype: AnalysisType) -> None:
         self.open_group(atype.name.lower())
 
-    def insert(self, name: str, data: np.ndarray, swp_vars: List[str]) -> None:
+    def insert(self, name: str, data: np.ndarray, swp_vars: Sequence[str]) -> None:
         for idx, var in enumerate(swp_vars):
-            arr = self._cur_data.get(var, None)
-            if arr is None:
-                raise ValueError(f'Cannot find sweep variable {var}.')
-            if arr.size != data.shape[idx]:
+            if var == 'corner':
+                arr_size = len(self._corners)
+            else:
+                arr = self._cur_data.get(var, None)
+                if arr is None:
+                    raise ValueError(f'Cannot find sweep variable {var}.')
+                arr_size = arr.size
+            if arr_size != data.shape[idx]:
                 raise ValueError(f'Sweep variable {var} shape mismatch.')
         self._cur_data[name] = data
         self._cur_swp_params[name] = swp_vars
