@@ -208,6 +208,12 @@ class AnalysisSweep1D:
 
         return cls(param, swp, ImmutableSortedDict(opt))
 
+    @property
+    def param_start(self) -> float:
+        if self.param:
+            return self.sweep.start
+        return 0.0
+
 
 @dataclass(eq=True, frozen=True)
 class AnalysisDC(AnalysisSweep1D):
@@ -263,6 +269,14 @@ class AnalysisTran:
     options: ImmutableSortedDict[str, str]
 
     @property
+    def param(self) -> str:
+        return ''
+
+    @property
+    def param_start(self) -> float:
+        return 0.0
+
+    @property
     def name(self) -> str:
         return 'tran'
 
@@ -283,7 +297,7 @@ def analysis_from_dict(table: Dict[str, Any]) -> AnalysisInfo:
     elif ana_type is AnalysisType.NOISE:
         base = AnalysisAC.from_dict(table)
         return AnalysisNoise(base.param, base.sweep, base.options, base.freq,
-                             table['out_probe'], table['in_probe'])
+                             table['out_probe'], table.get('in_probe', ''))
     elif ana_type is AnalysisType.TRAN:
         return AnalysisTran(table.get('start', 0.0), table['stop'], table.get('strobe', 0.0),
                             ImmutableSortedDict(table.get('options', {})))

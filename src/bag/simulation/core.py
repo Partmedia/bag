@@ -129,23 +129,22 @@ class TestbenchManager(abc.ABC):
                                  dut_cv_info_list: List[Any], dut_netlist: Path) -> None:
         ext = get_extension(self._sim.netlist_type)
         if sch_params is None:
-            tb_netlist_path = self._work_dir / f'{self._tb_name}.{ext}'
+            tb_netlist_path = self._work_dir / f'tb.{ext}'
         else:
             tb_netlist_path = self._create_tb_schematic(sch_db, sch_params,
                                                         dut_cv_info_list=dut_cv_info_list,
                                                         dut_netlist=dut_netlist)
 
         netlist_info = self.get_netlist_info()
-        sim_netlist_name = f'{self._tb_name}_sim.{ext}'
-        output_file = str(tb_netlist_path.with_name(sim_netlist_name))
-        self._sim.create_netlist(output_file, tb_netlist_path, netlist_info, self._precision)
+        output_path = tb_netlist_path.with_name(f'sim.{ext}')
+        self._sim.create_netlist(output_path, tb_netlist_path, netlist_info, self._precision)
         # run simulation and save/return raw result
         print(f'Simulating {self._tb_name}')
-        await self._sim.async_run_simulation(output_file, self._tb_name, netlist_info.sweep_type)
+        await self._sim.async_run_simulation(output_path, 'sim', netlist_info.sweep_type)
         print(f'Finished simulating {self._tb_name}')
 
     def load_md_array(self) -> MDArray:
-        return self._sim.load_md_array(self._work_dir, self._tb_name)
+        return self._sim.load_md_array(self._work_dir, 'sim')
 
     def _create_tb_schematic(self, sch_db: ModuleDB, sch_params: Mapping[str, Any],
                              dut_cv_info_list: List[Any], dut_netlist: Path) -> Path:
@@ -178,7 +177,7 @@ class TestbenchManager(abc.ABC):
 
         # create netlist for tb schematic
         ext = get_extension(self._sim.netlist_type)
-        tb_netlist_path = self._work_dir / f'{self._tb_name}.{ext}'
+        tb_netlist_path = self._work_dir / f'tb.{ext}'
         print(f'Creating testbench {self._tb_name} netlist')
         sch_db.batch_schematic([(sch_master, self._tb_name)], output=self._sim.netlist_type,
                                top_subckt=False, fname=str(tb_netlist_path),
@@ -374,7 +373,7 @@ class MeasurementManager(abc.ABC):
 
             # process and save simulation data
             print(f'Measurement {self._meas_name} in state {cur_state}, '
-                  f'processing data from {tb_name}')
+                  f'processing data from {tb_type}')
             done, next_state, prev_output = self.process_output(cur_state, cur_results, tb_manager)
             write_yaml(self._dir_path / f'{cur_state}.yaml', prev_output)
 
@@ -467,24 +466,6 @@ class DesignManager:
         return cls(prj, root_dir)
 
     @classmethod
-    def get_measurement_name(cls, dsn_name: str, meas_type: str) -> str:
-        """Returns the measurement name.
-
-        Parameters
-        ----------
-        dsn_name : str
-            design cell name.
-        meas_type : str
-            measurement type.
-
-        Returns
-        -------
-        meas_name : str
-            measurement name
-        """
-        return f'{dsn_name}_MEAS_{meas_type}'
-
-    @classmethod
     def get_wrapper_name(cls, dut_name: str, wrapper_name: str) -> str:
         """Returns the wrapper cell name corresponding to the given DUT."""
         return f'{dut_name}_WRAPPER_{wrapper_name}'
@@ -562,8 +543,8 @@ class DesignManager:
             meas_package = meas_specs['meas_package']
             meas_cls_name = meas_specs['meas_class']
             out_fname = meas_specs['out_fname']
-            meas_name = self.get_measurement_name(dsn_name, meas_type)
-            data_dir = self.get_measurement_directory(dsn_name, meas_type)
+            data_dir = dsn_data_dir / meas_type
+            meas_name = f'{dsn_name}_MEAS_{meas_type}'
 
             meas_module = importlib.import_module(meas_package)
             meas_cls = getattr(meas_module, meas_cls_name)
@@ -571,12 +552,12 @@ class DesignManager:
             meas_manager: MeasurementManager = meas_cls(self._prj.sim_access, data_dir, meas_name,
                                                         lib_name, meas_specs, wrapper_lookup,
                                                         [(dsn_name, view_name)], env_list)
-            print(f'Performing measurement {meas_name} on {dsn_name}')
+            print(f'Performing measurement {meas_type} on {dsn_name}')
             meas_res = await meas_manager.async_measure_performance(self._sch_db,
                                                                     dut_cvi_list=dut_cvi_list,
                                                                     dut_netlist=dut_netlist,
                                                                     load_from_file=load_from_file)
-            print(f'Measurement {meas_name} finished on {dsn_name}')
+            print(f'Measurement {meas_type} finished on {dsn_name}')
 
             write_yaml(data_dir / out_fname, meas_res)
             result_summary[meas_type] = meas_res
@@ -728,10 +709,6 @@ class DesignManager:
             an iterator of design names.
         """
         return (self.get_design_name(combo_list) for combo_list in self.get_combinations_iter())
-
-    def get_measurement_directory(self, dsn_name: str, meas_type: str) -> Path:
-        meas_name = self.get_measurement_name(dsn_name, meas_type)
-        return self._root_dir / dsn_name / meas_name
 
     def get_layout_params(self, val_list: Tuple[Any, ...]) -> Dict[str, Any]:
         """Returns the layout dictionary from the given sweep parameter values."""

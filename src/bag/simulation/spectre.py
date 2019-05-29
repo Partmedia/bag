@@ -42,9 +42,17 @@ if TYPE_CHECKING:
     from .base import ProcInfo
 
 
+reserve_params = {'freq', 'time'}
+
+
 def write_md_array_hdf5(hdf5_path: Path, dir_name: str) -> None:
+    import time
+    print('Writing HDF5')
+    start = time.time()
     env_list, data_dict = load_md_array(dir_name)
     save_md_array_hdf5(MDArray(env_list, data_dict), hdf5_path)
+    stop = time.time()
+    print(f'HDF5 write took {stop - start:.4g} seconds.')
 
 
 def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -> None:
@@ -79,7 +87,7 @@ def _get_sweep_str(par: str, swp_spec: Optional[SweepSpec], precision: int) -> s
 
     if isinstance(swp_spec, SweepList):
         tmp = ' '.join((float_to_si_string(val, precision) for val in swp_spec.values))
-        val_str = f'[{tmp}]'
+        val_str = f'values=[{tmp}]'
     elif isinstance(swp_spec, SweepLinear):
         # spectre: stop is inclusive, lin = number of points excluding the last point
         val_str = f'start={swp_spec.start} stop={swp_spec.stop_inc} lin={swp_spec.num - 1}'
@@ -89,7 +97,10 @@ def _get_sweep_str(par: str, swp_spec: Optional[SweepSpec], precision: int) -> s
     else:
         raise ValueError('Unknown sweep specification.')
 
-    return f'param={par} {val_str}'
+    if par in reserve_params:
+        return val_str
+    else:
+        return f'param={par} {val_str}'
 
 
 def _get_options_str(options: ImmutableSortedDict[str, str]) -> str:
@@ -120,9 +131,11 @@ def _write_analysis(lines: List[str], sim_env: str, ana: AnalysisInfo, precision
             cur_line += f' freq={float_to_si_string(ana.freq, precision)}'
 
         if isinstance(ana, AnalysisSP):
-            cur_line += f' ports=[{" ".join(ana.ports)}] paramtype={ana.param_type.name}'
+            cur_line += f' ports=[{" ".join(ana.ports)}] paramtype={ana.param_type.name.lower()}'
         elif isinstance(ana, AnalysisNoise):
-            cur_line += f' oprobe=[{ana.out_probe}] iprobe={ana.in_probe}'
+            cur_line += f' oprobe={ana.out_probe}'
+            if ana.in_probe:
+                cur_line += f' iprobe={ana.in_probe}'
     else:
         raise ValueError('Unknown analysis specification.')
 
@@ -153,7 +166,7 @@ class SpectreInterface(SimProcessManager):
     def netlist_type(self) -> DesignOutput:
         return DesignOutput.SPECTRE
 
-    def create_netlist(self, output_file: str, sch_netlist: Path, info: SimNetlistInfo,
+    def create_netlist(self, output_path: Path, sch_netlist: Path, info: SimNetlistInfo,
                        precision: int = 6) -> None:
         sim_envs = info.sim_envs
         analyses = info.analyses
@@ -164,7 +177,7 @@ class SpectreInterface(SimProcessManager):
         def_corner, def_temp = get_corner_temp(sim_envs[0])
 
         with open_file(sch_netlist, 'r') as f:
-            lines = f.readlines()
+            lines = [l.rstrip() for l in f]
 
         # write default model statements
         _write_sim_env(lines, self._model_setup[def_corner], def_temp)
@@ -172,12 +185,23 @@ class SpectreInterface(SimProcessManager):
 
         # write parameters
         param_fmt = 'parameters {}={}'
+        param_set = reserve_params.copy()
         for par, val in params.items():
             lines.append(param_fmt.format(par, float_to_si_string(val, precision)))
+            param_set.add(par)
         for par, val in swp_info.default_items():
             lines.append(param_fmt.format(par, float_to_si_string(val, precision)))
+            param_set.add(par)
         for par, val_list in env_params.items():
             lines.append(param_fmt.format(par, float_to_si_string(val_list[0], precision)))
+            param_set.add(par)
+        for ana in analyses:
+            par = ana.param
+            if par and par not in param_set:
+                lines.append(param_fmt.format(par, float_to_si_string(ana.param_start, precision)))
+                param_set.add(par)
+
+        lines.append('')
 
         if isinstance(swp_info, SetSweepInfo):
             # write paramset declaration if needed
@@ -192,23 +216,39 @@ class SpectreInterface(SimProcessManager):
             for par, val_list in env_params.items():
                 lines.append(param_fmt.format(par, val_list[idx]))
             lines.append('}')
+            lines.append('')
 
             # write sweep statements
             num_brackets = _write_sweep_start(lines, swp_info, idx, precision)
+            if num_brackets > 0:
+                lines.append('')
 
             # write analyses
             for ana in analyses:
                 _write_analysis(lines, sim_env, ana, precision)
+                lines.append('')
 
             # close sweep statements
             for _ in range(num_brackets):
                 lines.append('}')
+            if num_brackets > 0:
+                lines.append('')
+
+        with open_file(output_path, 'w') as f:
+            f.write('\n'.join(lines))
+            f.write('\n')
 
     def load_md_array(self, dir_path: Path, sim_tag: str) -> MDArray:
-        hdf5_path = dir_path / f'{sim_tag}.hdf5'
-        return load_md_array_hdf5(hdf5_path)
+        hdf5_path = dir_path / f'{sim_tag}_md.hdf5'
+        import time
+        print('Reading HDF5')
+        start = time.time()
+        ans = load_md_array_hdf5(hdf5_path)
+        stop = time.time()
+        print(f'HDF5 read took {stop - start:.4g} seconds.')
+        return ans
 
-    def setup_sim_process(self, netlist: str, sim_tag: str) -> ProcInfo:
+    def setup_sim_process(self, netlist: Path, sim_tag: str) -> ProcInfo:
         sim_kwargs: Dict[str, Any] = self.config['kwargs']
         cmd_str: str = sim_kwargs.get('command', 'spectre')
         env: Optional[Dict[str, str]] = sim_kwargs.get('env', None)
@@ -216,20 +256,25 @@ class SpectreInterface(SimProcessManager):
         fmt: str = sim_kwargs.get('format', 'psfxl')
         psf_version: str = sim_kwargs.get('psfversion', '1.1')
 
-        sim_cmd = [cmd_str, '-cols', '100', '-format', fmt, '-raw', f'{sim_tag}.raw']
+        sim_cmd = [cmd_str, '-cols', '100', '-colslog', '100',
+                   '-format', fmt, '-raw', f'{sim_tag}.raw']
 
         if fmt == 'psfxl':
             sim_cmd.append('-psfversion')
             sim_cmd.append(psf_version)
         if run_64:
             sim_cmd.append('-64')
+        sim_cmd.append(str(netlist))
 
-        cwd_path = Path(netlist).parent.resolve()
+        cwd_path = netlist.parent.resolve()
         # create empty log file to make sure it exists.
         log_path = cwd_path / 'spectre_output.log'
         return sim_cmd, str(log_path), env, str(cwd_path)
 
-    async def async_run_simulation(self, netlist: str, sim_tag: str, stype: SweepInfoType) -> None:
+    async def async_run_simulation(self, netlist: Path, sim_tag: str, stype: SweepInfoType) -> None:
+        if not netlist.is_file():
+            raise FileNotFoundError(f'netlist {netlist} is not a file.')
+
         args, log, env, cwd = self.setup_sim_process(netlist, sim_tag)
 
         # TODO: change implementation to move HDF5 writing to C++
@@ -244,4 +289,4 @@ class SpectreInterface(SimProcessManager):
         with ProcessPoolExecutor() as pool:
             if stype:
                 hdf5_path = cwd_path / f'{sim_tag}_md.hdf5'
-                await loop.run_in_executor(pool, write_md_array_hdf5, (hdf5_path, str(raw_path)))
+                await loop.run_in_executor(pool, write_md_array_hdf5, hdf5_path, str(raw_path))

@@ -89,7 +89,7 @@ class SimAccess(abc.ABC):
         return DesignOutput.CDL
 
     @abc.abstractmethod
-    def create_netlist(self, output_file: str, sch_netlist: Path, info: SimNetlistInfo,
+    def create_netlist(self, output_path: Path, sch_netlist: Path, info: SimNetlistInfo,
                        precision: int = 6) -> None:
         pass
 
@@ -112,12 +112,12 @@ class SimAccess(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def async_run_simulation(self, netlist: str, sim_tag: str, stype: SweepInfoType) -> None:
+    async def async_run_simulation(self, netlist: Path, sim_tag: str, stype: SweepInfoType) -> None:
         """A coroutine for simulation a testbench.
 
         Parameters
         ----------
-        netlist : str
+        netlist : Path
             the netlist file name.
         sim_tag : str
             optional simulation name.  Empty for default.
@@ -156,12 +156,12 @@ class SimProcessManager(SimAccess, abc.ABC):
                                           cancel_timeout=cancel_timeout)
 
     @abc.abstractmethod
-    def setup_sim_process(self, netlist: str, sim_tag: str) -> ProcInfo:
+    def setup_sim_process(self, netlist: Path, sim_tag: str) -> ProcInfo:
         """This method performs any setup necessary to configure a simulation process.
 
         Parameters
         ----------
-        netlist : str
+        netlist : Path
             the netlist file name.
         sim_tag : str
             optional simulation name.  Empty for default.
