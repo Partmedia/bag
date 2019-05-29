@@ -19,7 +19,7 @@ This module defines SimAccess, which provides methods to run simulations
 and retrieve results.
 """
 
-from typing import Tuple, Union, Iterable, List, Dict, Any, Optional, TypeVar, Type, Sequence
+from typing import Tuple, Union, Iterable, List, Dict, Any, Optional, TypeVar, Type
 
 import math
 from enum import Enum
@@ -342,16 +342,15 @@ def netlist_info_from_dict(table: Dict[str, Any]) -> SimNetlistInfo:
 class MDArray:
     """A data structure that stores simulation data as a multi-dimensional array."""
 
-    def __init__(self, env_list: Sequence[str],
-                 data: Dict[str, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]]) -> None:
-        self._corners = ImmutableList(env_list)
-        self._corners_arr = np.array(env_list)
+    def __init__(self, sim_envs: ImmutableList[str],
+                 data: Dict[AnalysisType, Tuple[Dict[str, np.ndarray], Dict[str, List[str]]]]
+                 ) -> None:
+        self._corners = sim_envs
         self._master_table = data
 
         if self._master_table:
-            tmp_str = next(iter(self._master_table.keys()))
-            self._cur_analysis = AnalysisType[tmp_str.upper()]
-            tmp = self._master_table[tmp_str]
+            self._cur_analysis = next(iter(self._master_table.keys()))
+            tmp = self._master_table[self._cur_analysis]
             self._cur_data: Dict[str, np.ndarray] = tmp[0]
             self._cur_swp_params: Dict[str, List[str]] = tmp[1]
         else:
@@ -366,27 +365,20 @@ class MDArray:
         return self._corners
 
     def __getitem__(self, item: str) -> np.ndarray:
-        if item == 'corner':
-            return self._corners_arr
         return self._cur_data[item]
 
     def __contains__(self, item: str) -> bool:
         return item == 'corner' or item in self._cur_data
 
-    def analysis_iter(self) -> Iterable[AnalysisType]:
-        for key in self._master_table.keys():
-            yield AnalysisType[key.upper()]
-
     def get_swp_params(self, item: str) -> ImmutableList[str]:
         return ImmutableList(self._cur_swp_params[item])
 
     def set_analysis(self, val: AnalysisType) -> None:
-        if val not in self._master_table:
+        tmp = self._master_table.get(val, None)
+        if tmp is None:
             raise ValueError(f'Analysis {val} not found.')
         self._cur_analysis = val
-        tmp = self._master_table[self._cur_analysis.name.lower()]
-        self._cur_data: Dict[str, np.ndarray] = tmp[0]
-        self._cur_swp_params: Dict[str, List[str]] = tmp[1]
+        self._cur_data, self._cur_swp_params = tmp
 
     def insert(self, name: str, data: np.ndarray, swp_vars: List[str]) -> None:
         for idx, var in enumerate(swp_vars):
