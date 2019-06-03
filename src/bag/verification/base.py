@@ -43,6 +43,8 @@
 
 """This module defines Checker, an abstract base class that handles LVS/RCX."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, List, Dict, Any, Tuple, Sequence, Optional
 
 import abc
