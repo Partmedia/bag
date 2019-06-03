@@ -355,22 +355,46 @@ def netlist_info_from_dict(table: Dict[str, Any]) -> SimNetlistInfo:
 # Simulation data classes
 ###############################################################################
 
-class MDArray:
+class AnalysisData:
+    """A data struct that stores simulation data from a single analysis"""
+    def __init__(self, sweep_params: Sequence[str], data: Dict[str, np.ndarray],
+                 is_md: bool) -> None:
+        self._swp_pars = ImmutableList(sweep_params)
+        self._data = data
+        self._is_md = is_md
+
+    @property
+    def is_md(self) -> bool:
+        return self._is_md
+
+    @property
+    def sweep_params(self) -> ImmutableList[str]:
+        return self._swp_pars
+
+    def __getitem__(self, item: str) -> np.ndarray:
+        return self._data[item]
+
+    def __contains__(self, item: str) -> bool:
+        return item in self._data
+
+    def items(self) -> ItemsView[str, np.ndarray]:
+        return self._data.items()
+
+    def insert(self, name: str, data: np.ndarray) -> None:
+        self._data[name] = data
+
+
+class SimData:
     """A data structure that stores simulation data as a multi-dimensional array."""
 
-    def __init__(self, sim_envs: Sequence[str],
-                 data: Dict[str, Tuple[Dict[str, np.ndarray], Dict[str, Sequence[str]]]]
-                 ) -> None:
-        self._corners = ImmutableList(sim_envs)
-        self._master_table = data
-
-        if self._master_table:
-            self._cur_name = next(iter(self._master_table.keys()))
-            tmp = self._master_table[self._cur_name]
-            self._cur_data: Dict[str, np.ndarray] = tmp[0]
-            self._cur_swp_params: Dict[str, Sequence[str]] = tmp[1]
-        else:
+    def __init__(self, sim_envs: Sequence[str], data: Dict[str, AnalysisData]) -> None:
+        if not data:
             raise ValueError('Empty simulation data.')
+
+        self._sim_envs = ImmutableList(sim_envs)
+        self._table = data
+        self._cur_name = next(iter(self._table.keys()))
+        self._cur_ana: AnalysisData = self._table[self._cur_name]
 
     @property
     def group(self) -> str:
@@ -378,47 +402,39 @@ class MDArray:
 
     @property
     def group_list(self) -> List[str]:
-        return list(self._master_table.keys())
+        return list(self._table.keys())
 
     @property
     def sim_envs(self) -> ImmutableList[str]:
-        return self._corners
+        return self._sim_envs
+
+    @property
+    def sweep_params(self) -> ImmutableList[str]:
+        return self._cur_ana.sweep_params
+
+    @property
+    def is_md(self) -> bool:
+        return self._cur_ana.is_md
 
     def __getitem__(self, item: str) -> np.ndarray:
-        return self._cur_data[item]
+        return self._cur_ana[item]
 
     def __contains__(self, item: str) -> bool:
-        return item in self._cur_data
+        return item in self._cur_ana
 
     def items(self) -> ItemsView[str, np.ndarray]:
-        return self._cur_data.items()
-
-    def get_swp_params(self, item: str) -> Optional[ImmutableList[str]]:
-        tmp = self._cur_swp_params.get(item, None)
-        if tmp:
-            return ImmutableList(tmp)
-        return None
+        return self._cur_ana.items()
 
     def open_group(self, val: str) -> None:
-        tmp = self._master_table.get(val, None)
+        tmp = self._table.get(val, None)
         if tmp is None:
             raise ValueError(f'Group {val} not found.')
+
         self._cur_name = val
-        self._cur_data, self._cur_swp_params = tmp
+        self._cur_ana = tmp
 
     def open_analysis(self, atype: AnalysisType) -> None:
         self.open_group(atype.name.lower())
 
-    def insert(self, name: str, data: np.ndarray, swp_vars: Sequence[str]) -> None:
-        for idx, var in enumerate(swp_vars):
-            if var == 'corner':
-                arr_size = len(self._corners)
-            else:
-                arr = self._cur_data.get(var, None)
-                if arr is None:
-                    raise ValueError(f'Cannot find sweep variable {var}.')
-                arr_size = arr.size
-            if arr_size != data.shape[idx]:
-                raise ValueError(f'Sweep variable {var} shape mismatch.')
-        self._cur_data[name] = data
-        self._cur_swp_params[name] = swp_vars
+    def insert(self, name: str, data: np.ndarray) -> None:
+        self._cur_ana.insert(name, data)

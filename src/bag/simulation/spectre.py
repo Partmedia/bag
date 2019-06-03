@@ -19,40 +19,25 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, Any, Sequence, Optional, List, Tuple
 
-import asyncio
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor
 
 from pybag.enum import DesignOutput
-from srr_pybind11 import load_md_array
 
 from ..math import float_to_si_string
 from ..io.file import read_yaml, open_file
 from ..util.immutable import ImmutableList, ImmutableSortedDict
 from .data import (
-    MDSweepInfo, MDArray, SetSweepInfo, SweepLinear, SweepLog, SweepList, SimNetlistInfo,
+    MDSweepInfo, SimData, SetSweepInfo, SweepLinear, SweepLog, SweepList, SimNetlistInfo,
     SweepSpec, AnalysisInfo, AnalysisAC, AnalysisSP, AnalysisNoise, AnalysisTran,
     AnalysisSweep1D, SweepInfoType
 )
 from .base import SimProcessManager, get_corner_temp
-from .hdf5 import save_md_array_hdf5, load_md_array_hdf5
+from .hdf5 import load_sim_data_hdf5
 
 if TYPE_CHECKING:
     from .data import SweepInfo
-    from .base import ProcInfo
-
 
 reserve_params = {'freq', 'time'}
-
-
-def write_md_array_hdf5(hdf5_path: Path, dir_name: str) -> None:
-    import time
-    print('Writing HDF5')
-    start = time.time()
-    env_list, data_dict = load_md_array(dir_name)
-    save_md_array_hdf5(MDArray(env_list, data_dict), hdf5_path)
-    stop = time.time()
-    print(f'HDF5 write took {stop - start:.4g} seconds.')
 
 
 def _write_sim_env(lines: List[str], models: List[Tuple[str, str]], temp: int) -> None:
@@ -119,7 +104,7 @@ def _write_sweep_start(lines: List[str], swp_info: SweepInfo, swp_idx: int, prec
 
 
 def _write_analysis(lines: List[str], sim_env: str, ana: AnalysisInfo, precision: int) -> None:
-    cur_line = f'\\@{ana.name}\\@{sim_env}\\@ {ana.name}'
+    cur_line = f'__{ana.name}__{sim_env}__ {ana.name}'
     if isinstance(ana, AnalysisTran):
         cur_line += f' start={ana.start} stop={ana.stop} strobeperiod={ana.strobe}'
     elif isinstance(ana, AnalysisSweep1D):
@@ -238,17 +223,20 @@ class SpectreInterface(SimProcessManager):
             f.write('\n'.join(lines))
             f.write('\n')
 
-    def load_md_array(self, dir_path: Path, sim_tag: str) -> MDArray:
-        hdf5_path = dir_path / f'{sim_tag}_md.hdf5'
+    def load_sim_data(self, dir_path: Path, sim_tag: str) -> SimData:
+        hdf5_path = dir_path / f'{sim_tag}.hdf5'
         import time
         print('Reading HDF5')
         start = time.time()
-        ans = load_md_array_hdf5(hdf5_path)
+        ans = load_sim_data_hdf5(hdf5_path)
         stop = time.time()
         print(f'HDF5 read took {stop - start:.4g} seconds.')
         return ans
 
-    def setup_sim_process(self, netlist: Path, sim_tag: str) -> ProcInfo:
+    async def async_run_simulation(self, netlist: Path, sim_tag: str, stype: SweepInfoType) -> None:
+        if not netlist.is_file():
+            raise FileNotFoundError(f'netlist {netlist} is not a file.')
+
         sim_kwargs: Dict[str, Any] = self.config['kwargs']
         cmd_str: str = sim_kwargs.get('command', 'spectre')
         env: Optional[Dict[str, str]] = sim_kwargs.get('env', None)
@@ -269,24 +257,18 @@ class SpectreInterface(SimProcessManager):
         cwd_path = netlist.parent.resolve()
         # create empty log file to make sure it exists.
         log_path = cwd_path / 'spectre_output.log'
-        return sim_cmd, str(log_path), env, str(cwd_path)
 
-    async def async_run_simulation(self, netlist: Path, sim_tag: str, stype: SweepInfoType) -> None:
-        if not netlist.is_file():
-            raise FileNotFoundError(f'netlist {netlist} is not a file.')
+        ret_code = await self.manager.async_new_subprocess(sim_cmd, str(log_path),
+                                                           env=env, cwd=str(cwd_path))
+        if ret_code is None or ret_code != 0:
+            raise ValueError(f'Spectre simulation ended with error.  See log file: {log_path}')
 
-        args, log, env, cwd = self.setup_sim_process(netlist, sim_tag)
-
-        # TODO: change implementation to move HDF5 writing to C++
-        await self._manager.async_new_subprocess(args, log, env=env, cwd=cwd)
-
-        cwd_path = Path(cwd)
+        # convert to HDF5
         raw_path = cwd_path / f'{sim_tag}.raw'
-        if not raw_path.exists():
-            raise FileNotFoundError(f'Cannot find simulation data directory: {raw_path}')
-
-        loop = asyncio.get_running_loop()
-        with ProcessPoolExecutor() as pool:
-            if stype:
-                hdf5_path = cwd_path / f'{sim_tag}_md.hdf5'
-                await loop.run_in_executor(pool, write_md_array_hdf5, hdf5_path, str(raw_path))
+        hdf5_path = cwd_path / f'{sim_tag}.hdf5'
+        log_path = cwd_path / 'srr_to_hdf5.log'
+        sim_cmd = ['srr_to_hdf5', str(raw_path), str(hdf5_path)]
+        ret_code = await self.manager.async_new_subprocess(sim_cmd, str(log_path),
+                                                           cwd=str(cwd_path))
+        if ret_code is None or ret_code != 0:
+            raise ValueError(f'srr_to_hdf5 ended with error.  See log file: {log_path}')

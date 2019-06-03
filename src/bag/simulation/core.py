@@ -61,7 +61,7 @@ from ..concurrent.core import batch_async_task
 from ..core import BagProject
 
 from .base import SimAccess
-from .data import SimNetlistInfo, MDArray
+from .data import SimNetlistInfo, SimData
 
 
 class TestbenchManager(abc.ABC):
@@ -143,8 +143,8 @@ class TestbenchManager(abc.ABC):
         await self._sim.async_run_simulation(output_path, 'sim', netlist_info.sweep_type)
         print(f'Finished simulating {self._tb_name}')
 
-    def load_md_array(self) -> MDArray:
-        return self._sim.load_md_array(self._work_dir, 'sim')
+    def load_sim_data(self) -> SimData:
+        return self._sim.load_sim_data(self._work_dir, 'sim')
 
     def _create_tb_schematic(self, sch_db: ModuleDB, sch_params: Mapping[str, Any],
                              dut_cv_info_list: List[Any], dut_netlist: Path) -> Path:
@@ -274,7 +274,7 @@ class MeasurementManager(abc.ABC):
         return tb_name, tb_type, tb_specs, tb_params
 
     @abc.abstractmethod
-    def process_output(self, state: str, data: MDArray, tb_manager: TestbenchManager
+    def process_output(self, state: str, data: SimData, tb_manager: TestbenchManager
                        ) -> Tuple[bool, str, Dict[str, Any]]:
         """Process simulation output data.
 
@@ -282,7 +282,7 @@ class MeasurementManager(abc.ABC):
         ----------
         state : str
             the current FSM state
-        data : MDArray
+        data : SimData
             simulation data dictionary.
         tb_manager : TestbenchManager
             the testbench manager object.
@@ -358,18 +358,18 @@ class MeasurementManager(abc.ABC):
                 print(f'Measurement {self._meas_name} in state {cur_state}, '
                       'load sim data from file.')
                 try:
-                    cur_results = tb_manager.load_md_array()
+                    cur_results = tb_manager.load_sim_data()
                 except FileNotFoundError:
                     print('Cannot find data file, simulating...')
                     await tb_manager.setup_and_simulate(sch_db, tb_sch_params,
                                                         dut_cv_info_list=dut_cvi_list,
                                                         dut_netlist=dut_netlist)
-                    cur_results = tb_manager.load_md_array()
+                    cur_results = tb_manager.load_sim_data()
             else:
                 await tb_manager.setup_and_simulate(sch_db, tb_sch_params,
                                                     dut_cv_info_list=dut_cvi_list,
                                                     dut_netlist=dut_netlist)
-                cur_results = tb_manager.load_md_array()
+                cur_results = tb_manager.load_sim_data()
 
             # process and save simulation data
             print(f'Measurement {self._meas_name} in state {cur_state}, '

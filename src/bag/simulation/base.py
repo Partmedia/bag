@@ -48,7 +48,7 @@ This module defines SimAccess, which provides methods to run simulations
 and retrieve results.
 """
 
-from typing import Dict, Optional, Sequence, Any, Tuple, Union
+from typing import Dict, Any, Tuple
 
 import abc
 from pathlib import Path
@@ -56,9 +56,7 @@ from pathlib import Path
 from pybag.enum import DesignOutput
 
 from ..concurrent.core import SubProcessManager
-from .data import SimNetlistInfo, MDArray, SweepInfoType
-
-ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], str]
+from .data import SimNetlistInfo, SimData, SweepInfoType
 
 
 def get_corner_temp(env_str: str) -> Tuple[str, int]:
@@ -94,7 +92,7 @@ class SimAccess(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def load_md_array(self, dir_path: Path, sim_tag: str) -> MDArray:
+    def load_sim_data(self, dir_path: Path, sim_tag: str) -> SimData:
         """Load simulation results.
 
         Parameters
@@ -155,26 +153,6 @@ class SimProcessManager(SimAccess, abc.ABC):
         self._manager = SubProcessManager(max_workers=sim_config.get('max_workers', 0),
                                           cancel_timeout=cancel_timeout)
 
-    @abc.abstractmethod
-    def setup_sim_process(self, netlist: Path, sim_tag: str) -> ProcInfo:
-        """This method performs any setup necessary to configure a simulation process.
-
-        Parameters
-        ----------
-        netlist : Path
-            the netlist file name.
-        sim_tag : str
-            optional simulation name.  Empty for default.
-
-        Returns
-        -------
-        args : Union[str, Sequence[str]]
-            command to run, as string or list of string arguments.
-        log : str
-            log file name.
-        env : Optional[Dict[str, str]]
-            environment variable dictionary.  None to inherit from parent.
-        cwd : str
-            working directory for the subprocess.
-        """
-        return '', '', None, ''
+    @property
+    def manager(self) -> SubProcessManager:
+        return self._manager
