@@ -48,6 +48,7 @@ from typing import Tuple, Dict, Any, Optional
 
 import os
 import socket
+from pathlib import Path
 
 from .io.file import read_file, read_yaml_env
 from .layout.tech import TechInfo
@@ -60,10 +61,21 @@ def get_bag_work_dir() -> str:
     work_dir = os.environ.get('BAG_WORK_DIR', '')
     if not work_dir:
         raise ValueError('Environment variable BAG_WORK_DIR not defined.')
-    if not os.path.isdir(work_dir):
-        raise ValueError('$BAG_WORK_DIR = "{}" is not a directory'.format(work_dir))
+    if not Path(work_dir).is_dir():
+        raise ValueError(f'$BAG_WORK_DIR = "{work_dir}" is not a directory')
 
     return work_dir
+
+
+def get_bag_tmp_dir() -> str:
+    """REturns the BAG temporary files directory."""
+    tmp_dir = os.environ.get('BAG_TEMP_DIR', '')
+    if not tmp_dir:
+        raise ValueError('Environment variable BAG_TEMP_DIR not defined.')
+    if not Path(tmp_dir).is_dir():
+        raise ValueError(f'$BAG_TEMP_DIR = "{tmp_dir}" is not a directory')
+
+    return tmp_dir
 
 
 def get_tech_dir() -> str:

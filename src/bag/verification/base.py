@@ -43,6 +43,8 @@
 
 """This module defines Checker, an abstract base class that handles LVS/RCX."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, List, Dict, Any, Tuple, Sequence, Optional
 
 import abc
@@ -103,6 +105,8 @@ class Checker(abc.ABC):
             schematic view name.  Optional.
         lay_view : str
             layout view name.  Optional.
+        netlist : str
+            the CDL netlist name.  If provided, will not try to call tools to generate netlist.
         params : Optional[Dict[str, Any]]
             optional LVS parameter values.
 
@@ -228,9 +232,9 @@ class SubProcessChecker(Checker, abc.ABC):
         self._manager = SubProcessManager(max_workers=max_workers, cancel_timeout=cancel_timeout)
 
     @abc.abstractmethod
-    def setup_lvs_flow(self, lib_name, cell_name, sch_view='schematic',
-                       lay_view='layout', params=None):
-        # type: (str, str, str, str, Optional[Dict[str, Any]]) -> Sequence[FlowInfo]
+    def setup_lvs_flow(self, lib_name: str, cell_name: str, sch_view: str = 'schematic',
+                       lay_view: str = 'layout', netlist: str = '',
+                       params: Optional[Dict[str, Any]] = None) -> Sequence[FlowInfo]:
         """This method performs any setup necessary to configure a LVS subprocess flow.
 
         Parameters
@@ -243,6 +247,8 @@ class SubProcessChecker(Checker, abc.ABC):
             schematic view name.
         lay_view : str
             layout view name.
+        netlist : str
+            the CDL netlist name.  If provided, will not try to call tools to generate netlist.
         params : Optional[Dict[str, Any]]
             optional LVS parameter values.
 
@@ -267,9 +273,9 @@ class SubProcessChecker(Checker, abc.ABC):
         return []
 
     @abc.abstractmethod
-    def setup_rcx_flow(self, lib_name, cell_name, sch_view='schematic',
-                       lay_view='layout', params=None):
-        # type: (str, str, str, str, Optional[Dict[str, Any]]) -> Sequence[FlowInfo]
+    def setup_rcx_flow(self, lib_name: str, cell_name: str, sch_view: str = 'schematic',
+                       lay_view: str = 'layout', params: Optional[Dict[str, Any]] = None
+                       ) -> Sequence[FlowInfo]:
         """This method performs any setup necessary to configure a RCX subprocess flow.
 
         Parameters

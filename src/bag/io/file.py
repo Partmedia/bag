@@ -61,7 +61,7 @@ from .common import bag_encoding, bag_codec_error
 yaml = YAML(typ='unsafe')
 
 
-def open_file(fname: str, mode: str) -> TextIO:
+def open_file(fname: Union[str, Path], mode: str) -> TextIO:
     """Opens a file with the correct encoding interface.
 
     Use this method if you need to have a file handle.
@@ -119,7 +119,7 @@ def readlines_iter(fname: str) -> Iterable[str]:
             yield line
 
 
-def read_yaml(fname: str) -> Any:
+def read_yaml(fname: Union[str, Path]) -> Any:
     """Read the given file using YAML.
 
     Parameters
