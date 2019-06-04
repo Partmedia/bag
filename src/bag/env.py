@@ -56,38 +56,55 @@ from .layout.routing import RoutingGrid
 from .util.importlib import import_class
 
 
-def get_bag_work_dir() -> str:
+def get_bag_work_path() -> Path:
     """Returns the BAG working directory."""
     work_dir = os.environ.get('BAG_WORK_DIR', '')
     if not work_dir:
         raise ValueError('Environment variable BAG_WORK_DIR not defined.')
-    work_path = Path(work_dir)
+    work_path = Path(work_dir).resolve()
     if not work_path.is_dir():
         raise ValueError(f'$BAG_WORK_DIR = "{work_dir}" is not a directory')
 
-    return str(work_path.resolve())
+    return work_path
 
 
-def get_bag_tmp_dir() -> str:
-    """REturns the BAG temporary files directory."""
+def get_bag_tmp_path() -> Path:
+    """Returns the BAG temporary files directory."""
     tmp_dir = os.environ.get('BAG_TEMP_DIR', '')
     if not tmp_dir:
         raise ValueError('Environment variable BAG_TEMP_DIR not defined.')
-    if not Path(tmp_dir).is_dir():
+    tmp_path = Path(tmp_dir).resolve()
+    if not tmp_path.is_dir():
         raise ValueError(f'$BAG_TEMP_DIR = "{tmp_dir}" is not a directory')
 
-    return tmp_dir
+    return tmp_path
 
 
-def get_tech_dir() -> str:
+def get_tech_path() -> Path:
     """Returns the technology directory."""
     tech_dir = os.environ.get('BAG_TECH_CONFIG_DIR', '')
     if not tech_dir:
         raise ValueError('Environment variable BAG_TECH_CONFIG_DIR not defined.')
-    if not os.path.isdir(tech_dir):
+    tech_path = Path(tech_dir).resolve()
+    if not tech_path.is_dir():
         raise ValueError('BAG_TECH_CONFIG_DIR = "{}" is not a directory'.format(tech_dir))
 
-    return tech_dir
+    return tech_path
+
+
+def get_bag_work_dir() -> str:
+    """Returns the BAG working directory."""
+    return str(get_bag_work_path())
+
+
+def get_bag_tmp_dir() -> str:
+    """Returns the BAG temporary files directory."""
+    return str(get_bag_tmp_path())
+
+
+def get_tech_dir() -> str:
+    """Returns the technology directory."""
+    return str(get_tech_path())
 
 
 def get_bag_config() -> Dict[str, Any]:
@@ -177,7 +194,7 @@ def get_port_number(bag_config: Optional[Dict[str, Any]] = None) -> Tuple[int, s
     if bag_config is None:
         bag_config = get_bag_config()
 
-    port_file = os.path.join(get_bag_work_dir(), bag_config['socket']['port_file'])
+    port_file = get_bag_work_path() / bag_config['socket']['port_file']
     try:
         port = int(read_file(port_file))
     except ValueError as err:
@@ -192,23 +209,23 @@ def get_port_number(bag_config: Optional[Dict[str, Any]] = None) -> Tuple[int, s
 
 def get_netlist_setup_file() -> str:
     """Returns the netlist setup file path."""
-    ans = os.path.abspath(os.path.join(get_tech_dir(), 'netlist_setup', 'netlist_setup.yaml'))
-    if not os.path.isfile(ans):
-        raise ValueError(ans + ' is not a file.')
-    return ans
+    ans = get_tech_path() / 'netlist_setup' / 'netlist_setup.yaml'
+    if not ans.is_file():
+        raise ValueError(f'{ans} is not a file.')
+    return str(ans)
 
 
 def get_gds_layer_map() -> str:
     """Returns the GDs layer map file."""
-    ans = os.path.abspath(os.path.join(get_tech_dir(), 'gds_setup', 'gds.layermap'))
-    if not os.path.isfile(ans):
-        raise ValueError(ans + ' is not a file.')
-    return ans
+    ans = get_tech_path() / 'gds_setup' / 'gds.layermap'
+    if not ans.is_file():
+        raise ValueError(f'{ans} is not a file.')
+    return str(ans)
 
 
 def get_gds_object_map() -> str:
     """Returns the GDS object map file."""
-    ans = os.path.abspath(os.path.join(get_tech_dir(), 'gds_setup', 'gds.objectmap'))
-    if not os.path.isfile(ans):
-        raise ValueError(ans + ' is not a file.')
-    return ans
+    ans = get_tech_path() / 'gds_setup' / 'gds.objectmap'
+    if not ans.is_file():
+        raise ValueError(f'{ans} is not a file.')
+    return str(ans)
