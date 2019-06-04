@@ -654,8 +654,8 @@ class Module(DesignMaster):
                 inst.update_connection(name, 'S', s_name)
                 inst.design(w=w, l=lch, nf=fg, intent=th)
 
-    def design_transistor(self, inst_name: str, w: Union[float, int], lch: float, seg: int,
-                          intent: str, m: str, d: str = '', g: Union[str, List[str]] = '',
+    def design_transistor(self, inst_name: str, w: int, lch: int, seg: int,
+                          intent: str, m: str = '', d: str = '', g: Union[str, List[str]] = '',
                           s: str = '', b: str = '', stack: int = 1, mos_type: str = '') -> None:
         """Design a BAG_prim transistor (with stacking support).
 
@@ -667,10 +667,10 @@ class Module(DesignMaster):
         ----------
         inst_name : str
             name of the BAG_prim transistor instance.
-        w : Union[float, int]
-            the width of the transistor, in meters/number of fins.
-        lch : float
-            the channel length, in meters.
+        w : int
+            the width of the transistor, in number of fins or resolution units.
+        lch : int
+            the channel length, in resolution units.
         seg : int
             number of parallel segments of stacked transistors.
         intent : str
