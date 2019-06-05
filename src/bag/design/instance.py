@@ -235,8 +235,6 @@ class SchInstance:
         connected every port of this instance.
         """
         if self._master is not None:
-            pin_list = list(self._master.pins.keys())
-            print(f'Calling check connections with: {pin_list}')
             self._ptr.check_connections(self._master.pins.keys())
 
     def get_connection(self, term_name: str) -> str:
