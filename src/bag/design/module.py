@@ -60,7 +60,6 @@ from ..util.cache import DesignMaster, Param
 from .instance import SchInstance
 from ..layout.tech import TechInfo
 
-
 if TYPE_CHECKING:
     from .database import ModuleDB
 
@@ -86,31 +85,30 @@ class Module(DesignMaster):
 
     def __init__(self, yaml_fname: str, database: ModuleDB, params: Param, *,
                  copy_state: Optional[Dict[str, Any]] = None, **kwargs: Any) -> None:
-        self._cv = None  # type: Optional[PySchCellView]
+        self._cv: Optional[PySchCellView] = None
         if copy_state:
             self._netlist_dir = copy_state['netlist_dir']
             self._cv = copy_state['cv']
-            self._pins = copy_state['pins']  # type: Dict[str, TermType]
+            self._pins: Dict[str, TermType] = copy_state['pins']
             self._orig_cell_name = copy_state['orig_cell_name']
-            self.instances = copy_state['instances']  # type: Dict[str, SchInstance]
+            self.instances: Dict[str, SchInstance] = copy_state['instances']
         else:
-            self._pins = {}  # type: Dict[str, TermType]
+            self._pins: Dict[str, TermType] = {}
             if yaml_fname:
                 # normal schematic
                 yaml_fname = os.path.abspath(yaml_fname)
                 self._netlist_dir = os.path.dirname(yaml_fname)
                 self._cv = PySchCellView(yaml_fname, 'symbol')
                 self._orig_cell_name = self._cv.cell_name
-                self.instances = {name: SchInstance(database, ref)
-                                  for (name, ref) in
-                                  self._cv.inst_refs()}  # type: Dict[str, SchInstance]
+                self.instances: Dict[str, SchInstance] = {name: SchInstance(database, ref)
+                                                          for name, ref in self._cv.inst_refs()}
                 if not self.is_primitive():
                     self._cv.lib_name = database.lib_name
             else:
                 # empty yaml file name, this is a BAG primitive
                 self._netlist_dir = ''
                 self._orig_cell_name = self.__class__.__name__.split('__')[1]
-                self.instances = {}  # type: Dict[str, SchInstance]
+                self.instances: Dict[str, SchInstance] = {}
 
         # initialize schematic master
         DesignMaster.__init__(self, database, params, copy_state=copy_state, **kwargs)
@@ -229,11 +227,13 @@ class Module(DesignMaster):
         # get set of children master keys
         for inst in self.instances.values():
             if not inst.is_primitive:
+                # NOTE: only non-primitive instance can have ports change
+                inst.check_connections()
                 self.add_child_key(inst.master_key)
 
         if self._cv is not None:
             # get pins
-            self._pins = dict(self._cv.terminals())
+            self._pins = {k: TermType(v) for k, v in self._cv.terminals()}
             # update cell name
             self._cv.cell_name = self.cell_name
 
@@ -538,7 +538,7 @@ class Module(DesignMaster):
             inst_ptr = self._cv.get_inst_ref(name)
             self.instances[name] = SchInstance(db, inst_ptr, master=orig_inst.master)
 
-    def design_dc_bias_sources(self,  vbias_dict: Optional[Dict[str, List[str]]],
+    def design_dc_bias_sources(self, vbias_dict: Optional[Dict[str, List[str]]],
                                ibias_dict: Optional[Dict[str, List[str]]],
                                vinst_name: str, iinst_name: str,
                                define_vdd: bool = True) -> None:
