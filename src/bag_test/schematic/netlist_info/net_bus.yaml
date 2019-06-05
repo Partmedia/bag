@@ -2,7 +2,7 @@ lib_name: bag_test
 cell_name: net_bus
 view_name: schematic
 bbox:
-  - -140
+  - -220
   - -600
   - 768
   - -210
@@ -15,13 +15,13 @@ terminals:
           cell_name: ipin
           view_name: symbol
           xform:
-            - -80
+            - -160
             - -220
             - R0
           bbox:
-            - -137
+            - -217
             - -246
-            - -80
+            - -160
             - -210
           connections:
             {}
@@ -33,7 +33,7 @@ terminals:
           purpose: 237
           net: ""
           origin:
-            - -110
+            - -190
             - -220
           alignment: 7
           orient: R0
@@ -54,13 +54,13 @@ terminals:
           cell_name: ipin
           view_name: symbol
           xform:
-            - -80
+            - -160
             - -240
             - R0
           bbox:
-            - -137
+            - -217
             - -266
-            - -80
+            - -160
             - -230
           connections:
             {}
@@ -72,7 +72,7 @@ terminals:
           purpose: 237
           net: ""
           origin:
-            - -110
+            - -190
             - -240
           alignment: 7
           orient: R0
@@ -85,6 +85,45 @@ terminals:
           format: 1
     stype: 2
     ttype: 0
+  mid:
+    obj:
+      - 1
+      - inst:
+          lib_name: basic
+          cell_name: opin
+          view_name: symbol
+          xform:
+            - -120
+            - -320
+            - R0
+          bbox:
+            - -120
+            - -346
+            - -63
+            - -310
+          connections:
+            {}
+          params:
+            {}
+          is_primitive: true
+        attr:
+          layer: 229
+          purpose: 237
+          net: ""
+          origin:
+            - -95
+            - -320
+          alignment: 1
+          orient: R0
+          font: 5
+          height: 10
+          overbar: false
+          visible: true
+          drafting: true
+          attr_type: 0
+          format: 1
+    stype: 0
+    ttype: 1
   vin:
     obj:
       - 1
@@ -93,13 +132,13 @@ terminals:
           cell_name: ipin
           view_name: symbol
           xform:
-            - -80
+            - -160
             - -280
             - R0
           bbox:
-            - -137
+            - -217
             - -306
-            - -80
+            - -160
             - -270
           connections:
             {}
@@ -111,7 +150,7 @@ terminals:
           purpose: 237
           net: ""
           origin:
-            - -110
+            - -190
             - -280
           alignment: 7
           orient: R0
@@ -132,13 +171,13 @@ terminals:
           cell_name: opin
           view_name: symbol
           xform:
-            - -40
+            - -120
             - -280
             - R0
           bbox:
-            - -40
+            - -120
             - -306
-            - 17
+            - -63
             - -270
           connections:
             {}
@@ -150,7 +189,7 @@ terminals:
           purpose: 237
           net: ""
           origin:
-            - -15
+            - -95
             - -280
           alignment: 1
           orient: R0
@@ -406,22 +445,22 @@ instances:
 props:
   connectivityLastUpdated:
     - 0
-    - 579
+    - 1113
   instance#:
     - 0
     - 2
   lastSchematicExtraction:
     - 4
-    - time_val: 1557516553
+    - time_val: 1559712708
   net#:
     - 0
     - 0
   pin#:
     - 0
-    - 4
+    - 5
   schGeometryLastUpdated:
     - 0
-    - 579
+    - 1113
   schGeometryVersion:
     - 3
     - sch.ds.gm.1.4
@@ -431,10 +470,10 @@ props:
 app_defs:
   _dbLastSavedCounter:
     - 0
-    - 579
+    - 1113
   _dbvCvTimeStamp:
     - 0
-    - 579
+    - 1113
   cdbRevision:
     - 0
     - 227612

@@ -228,6 +228,17 @@ class SchInstance:
         """
         self._ptr.update_connection(inst_name, term_name, net_name)
 
+    def check_connections(self):
+        """Check that the connections of this instance is valid.
+
+        This method is called by the finalize() method, and checks that the user
+        connected every port of this instance.
+        """
+        if self._master is not None:
+            pin_list = list(self._master.pins.keys())
+            print(f'Calling check connections with: {pin_list}')
+            self._ptr.check_connections(self._master.pins.keys())
+
     def get_connection(self, term_name: str) -> str:
         """Get the net name connected to the given terminal.
 

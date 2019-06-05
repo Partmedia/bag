@@ -115,4 +115,5 @@ RR0 PLUS MINUS cds_ff_mpt_resm8  l=l w=w
 ends res_metal_8
 
 
-
+subckt PYTEST VDD VSS vin<3> vin<2> vin<1> vin<0> vout
+ends PYTEST

@@ -129,12 +129,11 @@ def test_design(tmpdir,
     else:
         model_params = None
 
+    out_code = int(options.get('shell', False)) + 2 * (1 - int(options.get('top_subckt', True)))
     if output_type is DesignOutput.YAML:
         base = 'out'
-    elif output_type is DesignOutput.SPECTRE:
-        base = 'out_{}'.format(int(options['shell']) + 2 * int(options.get('top_subckt', True)))
     else:
-        base = 'out_{}'.format(int(options['shell']))
+        base = f'out_{out_code}'
 
     expect_fname = sch_design_params.get('{}_{}'.format(base, extension), '')
     if not expect_fname and not gen_output:

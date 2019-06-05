@@ -83,12 +83,12 @@ def open_file(fname: Union[str, Path], mode: str) -> TextIO:
     return open(fname, mode, encoding=bag_encoding, errors=bag_codec_error)
 
 
-def read_file(fname: str) -> str:
+def read_file(fname: Union[str, Path]) -> str:
     """Read the given file and return content as string.
 
     Parameters
     ----------
-    fname : str
+    fname : Union[str, Path]
         the file name.
 
     Returns
