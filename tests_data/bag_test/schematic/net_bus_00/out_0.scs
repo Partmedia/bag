@@ -123,7 +123,7 @@ subckt pin_array_0 VDD VSS vin vout
 ends pin_array_0
 
 
-subckt PYTEST VDD VSS vin vout
+subckt PYTEST VDD VSS vin mid<3> mid<2> mid<1> mid<0> vout
 X0_3 VDD VSS vin mid<3> pin_array_0
 X0_2 VDD VSS vin mid<2> pin_array_0
 X0_1 VDD VSS vin mid<1> pin_array_0
