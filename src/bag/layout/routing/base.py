@@ -103,14 +103,36 @@ class TrackID(PyTrackID):
         """HalfInt: the track pitch."""
         return HalfInt(self.htr_pitch)
 
-    def __getitem__(self, idx: int) -> TrackID:
+    def __getitem__(self, idx: Union[int, slice]) -> TrackID:
         num = self.num
-        if idx < 0:
-            idx += num
-        if idx < 0 or idx >= num:
-            raise ValueError(f'Invalid index {idx} with {num} wires.')
         pitch = self.pitch
-        return TrackID(self.layer_id, self.base_index + idx * pitch, width=self.width)
+        if isinstance(idx, int):
+            if idx < 0:
+                idx += num
+            if idx < 0 or idx >= num:
+                raise ValueError(f'Invalid index {idx} with {num} wires.')
+            return TrackID(self.layer_id, self.base_index + idx * pitch, width=self.width)
+        else:
+            start, stop, step = idx.start, idx.stop, idx.step
+            if step:
+                if not isinstance(step, int):
+                    raise ValueError(f'WireArray slicing step {step} has to be integer')
+            else:
+                step = 1
+
+            if start < 0:
+                start += num
+            if start < 0 or start >= num:
+                raise ValueError(f'Invalid start index {start} with {num} wires.')
+
+            if stop < 0:
+                stop += num + 1
+            if stop <= 0 or stop > num:
+                raise ValueError(f'Invalid stop index {stop} with {num} wires.')
+
+            slice_num = (stop - start) // step
+            return TrackID(self.layer_id, self.base_index + start * pitch, width=self.width,
+                           num=slice_num, pitch=pitch)
 
     def transform(self, xform: Transform, grid: RoutingGrid) -> TrackID:
         """Transform this TrackID."""
