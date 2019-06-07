@@ -422,16 +422,22 @@ class MeasurementManager(abc.ABC):
 class DesignSpecs:
     """A class that parses the design specification file."""
 
-    def __init__(self, spec_file: str) -> None:
-        spec_path = Path(spec_file).resolve()
-        if spec_path.is_file():
-            self._specs = read_yaml(spec_path)
+    def __init__(self, spec_file: str, spec_dict: Optional[Dict[str, Any]] = None) -> None:
+        if spec_dict:
+            self._specs = spec_dict
             self._root_dir: Path = Path(self._specs['root_dir']).resolve()
-        elif spec_path.is_dir():
-            self._root_dir: Path = spec_path
-            self._specs = read_yaml(self._root_dir / 'specs.yaml')
+        elif spec_file:
+            spec_path = Path(spec_file).resolve()
+            if spec_path.is_file():
+                self._specs = read_yaml(spec_path)
+                self._root_dir: Path = Path(self._specs['root_dir']).resolve()
+            elif spec_path.is_dir():
+                self._root_dir: Path = spec_path
+                self._specs = read_yaml(self._root_dir / 'specs.yaml')
+            else:
+                raise ValueError(f'{spec_path} is neither data directory or specification file.')
         else:
-            raise ValueError(f'{spec_path} is neither data directory or specification file.')
+            raise ValueError('spec_file is empty.')
 
         cls_package = self._specs['layout_package']
         cls_name = self._specs['layout_class']
@@ -568,10 +574,11 @@ class DesignManager:
         the specification file name or the data directory.
     """
 
-    def __init__(self, prj: BagProject, spec_file: str, sch_db: Optional[ModuleDB] = None,
+    def __init__(self, prj: BagProject, spec_file: str = '',
+                 spec_dict: Optional[Dict[str, Any]] = None, sch_db: Optional[ModuleDB] = None,
                  lay_db: Optional[TemplateDB] = None) -> None:
         self._prj = prj
-        self._info = DesignSpecs(spec_file)
+        self._info = DesignSpecs(spec_file, spec_dict)
 
         impl_lib = self._info.impl_lib
         if sch_db is None:
