@@ -132,8 +132,8 @@ RR0 PLUS MINUS $[resmt]  l=l w=w r=0.0214*l/w
 .ENDS
 
 
-.SUBCKT PYTEST VDD VSS vin vout
-*.PININFO VDD:I VSS:I vin:I vout:O
+.SUBCKT PYTEST VDD VSS vin mid<3> mid<2> mid<1> mid<0> vout
+*.PININFO VDD:I VSS:I vin:I mid<3>:O mid<2>:O mid<1>:O mid<0>:O vout:O
 X0_3 VDD VSS vin mid<3> / pin_array_0
 X0_2 VDD VSS vin mid<2> / pin_array_0
 X0_1 VDD VSS vin mid<1> / pin_array_0

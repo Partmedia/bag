@@ -56,7 +56,7 @@ si_mag = [-18, -15, -12, -9, -6, -3, 0, 3, 6, 9, 12]
 si_pre = ['a', 'f', 'p', 'n', 'u', 'm', '', 'k', 'M', 'G', 'T']
 
 
-def float_to_si_string(num, precision=6):
+def float_to_si_string(num: float, precision: int = 6) -> str:
     """Converts the given floating point number to a string using SI prefix.
 
     Parameters
@@ -82,9 +82,9 @@ def float_to_si_string(num, precision=6):
             pre_idx = idx - 1
             break
 
-    fmt = '%%.%dg%%s' % precision
+    fmt = '{:.%dg}{}' % precision
     res = 10.0 ** (si_mag[pre_idx])
-    return fmt % (num / res, si_pre[pre_idx])
+    return fmt.format(num / res, si_pre[pre_idx])
 
 
 def si_string_to_float(si_str):

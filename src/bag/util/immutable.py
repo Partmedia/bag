@@ -92,13 +92,21 @@ class ImmutableList(Hashable, Sequence, Generic[T]):
             for v in values:
                 self._hash = combine_hash(self._hash, hash(v))
 
+    @classmethod
+    def sequence_equal(cls, a: Sequence[T], b: Sequence[T]) -> bool:
+        if len(a) != len(b):
+            return False
+        for av, bv in zip(a, b):
+            if av != bv:
+                return False
+        return True
+
     def __repr__(self) -> str:
         return repr(self._content)
 
     def __eq__(self, other: Any) -> bool:
-        return (isinstance(other, ImmutableList) and
-                self._hash == other._hash and
-                self._content == other._content)
+        return (isinstance(other, ImmutableList) and self._hash == other._hash and
+                self.sequence_equal(self._content, other._content))
 
     def __hash__(self) -> int:
         return self._hash

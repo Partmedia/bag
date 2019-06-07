@@ -46,5 +46,7 @@ class bag_test__net_bus(Module):
             bus_name = f'<{mult - 1}:0>'
             mid_name = f'mid{bus_name}'
 
+            self.rename_pin('mid', mid_name)
+
             self.rename_instance('X0', f'X0{bus_name}', [('vout', mid_name)])
             self.reconnect_instance_terminal('X1', f'vin{bus_name}', mid_name)
