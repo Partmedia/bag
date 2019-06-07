@@ -55,6 +55,7 @@ from pybag.enum import DesignOutput, get_extension
 
 from ..math import float_to_si_string
 from ..io.file import read_yaml, write_yaml
+from ..util.immutable import ImmutableList
 from ..layout.template import TemplateDB, TemplateBase
 from ..design.database import ModuleDB, ModuleType
 from ..concurrent.core import batch_async_task
@@ -432,15 +433,21 @@ class DesignSpecs:
         else:
             raise ValueError(f'{spec_path} is neither data directory or specification file.')
 
-        self._swp_var_list: Tuple[str, ...] = tuple(sorted(self._specs['sweep_params'].keys()))
+        cls_package = self._specs['layout_package']
+        cls_name = self._specs['layout_class']
+        self._create_layout = cls_package and cls_name
+
+        self._swp_var_list: ImmutableList[str] = ImmutableList(
+            sorted(self._specs['sweep_params'].keys()))
         self._sweep_params = self._specs['sweep_params']
+        self._params = self._specs['layout_params' if self._create_layout else 'schematic_params']
 
     @property
     def root_dir(self) -> Path:
         return self._root_dir
 
     @property
-    def swp_var_list(self) -> Tuple[str]:
+    def swp_var_list(self) -> ImmutableList[str]:
         return self._swp_var_list
 
     @property
@@ -475,9 +482,18 @@ class DesignSpecs:
     def specs(self) -> Dict[str, Any]:
         return self._specs
 
-    def get_first_params(self, is_sch: bool = False) -> Dict[str, Any]:
+    @property
+    def create_layout(self) -> bool:
+        return self._create_layout
+
+    @property
+    def first_params(self) -> Dict[str, Any]:
         combo = [self._sweep_params[key][0] for key in self._swp_var_list]
-        return self._get_params(combo, is_sch=is_sch)
+        return self._get_params(combo)
+
+    def get_data_dir(self, dsn_name: str, meas_type: str) -> Path:
+        """Returns the data directory path for the given measurement."""
+        return self._root_dir.joinpath(dsn_name, meas_type)
 
     def get_swp_values(self, var: str) -> List[Any]:
         """Returns a list of valid sweep variable values.
@@ -504,19 +520,21 @@ class DesignSpecs:
         """
         return itertools.product(*(self._sweep_params[var] for var in self._swp_var_list))
 
-    def dsn_param_iter(self, is_sch: bool = False) -> Iterable[Tuple[str, Dict[str, Any]]]:
+    def dsn_param_iter(self) -> Iterable[Tuple[str, Dict[str, Any]]]:
         """Returns an iterator of design cell name and the parameter dictionary."""
         for combo in self.swp_combo_iter():
-            yield self._get_design_name(combo), self._get_params(combo, is_sch=is_sch)
+            yield self.get_design_name(combo), self._get_params(combo)
+
+    def dsn_name_iter(self) -> Iterable[str]:
+        return (self.get_design_name(combo) for combo in self.swp_combo_iter())
 
     def get_layout_class(self) -> Type[TemplateBase]:
         cls_package = self._specs['layout_package']
         cls_name = self._specs['layout_class']
-
         lay_module = importlib.import_module(cls_package)
         return getattr(lay_module, cls_name)
 
-    def _get_design_name(self, combo_list: Sequence[Any]) -> str:
+    def get_design_name(self, combo_list: Sequence[Any]) -> str:
         name = self.dsn_basename
         for var, val in zip(self.swp_var_list, combo_list):
             if isinstance(val, str) or isinstance(val, int):
@@ -528,8 +546,8 @@ class DesignSpecs:
 
         return name
 
-    def _get_params(self, combo_list: Sequence[Any], is_sch: bool = False) -> Dict[str, Any]:
-        params = self._specs['layout_params' if is_sch else 'schematic_params'].copy()
+    def _get_params(self, combo_list: Sequence[Any]) -> Dict[str, Any]:
+        params = self._params.copy()
         for var, val in zip(self._swp_var_list, combo_list):
             params[var] = val
         return params
@@ -647,7 +665,7 @@ class DesignManager:
             meas_package = meas_specs['meas_package']
             meas_cls_name = meas_specs['meas_class']
             out_fname = meas_specs['out_fname']
-            data_dir = dsn_data_dir / meas_type
+            data_dir = self._info.get_data_dir(dsn_name, meas_type)
             meas_name = f'{dsn_name}_MEAS_{meas_type}'
 
             meas_module = importlib.import_module(meas_package)
@@ -680,7 +698,7 @@ class DesignManager:
                                      dut_cvi_list=dut_cv_info_list, dut_netlist=dut_sim_netlist)
 
     def characterize_designs(self, generate: bool = True, measure: bool = True,
-                             load_from_file: bool = False, create_layout: bool = True) -> None:
+                             load_from_file: bool = False) -> None:
         """Sweep all designs and characterize them.
 
         Parameters
@@ -692,22 +710,19 @@ class DesignManager:
         load_from_file : bool
             If True, measurements will load existing simulation data
             instead of running simulations.
-        create_layout: bool
-            True to create layout.
         """
         impl_lib = self._info.impl_lib
         rcx_params = self._info.specs.get('rcx_params', None)
 
-        tmp = self.create_designs(create_layout)
-        dsn_names, dut_cv_info_list, dut_cdl_netlist, dut_sim_netlist = tmp
+        dut_info_list = self.create_designs()
 
         extract = generate and self._info.view_name != 'schematic'
         coro_list = [self.main_task(impl_lib, dsn_name, rcx_params, extract=extract,
                                     measure=measure, load_from_file=load_from_file,
-                                    dut_cv_info_list=dut_cv_info_list,
-                                    dut_cdl_netlist=dut_cdl_netlist,
-                                    dut_sim_netlist=dut_sim_netlist)
-                     for dsn_name in dsn_names]
+                                    dut_cv_info_list=cv_info_list,
+                                    dut_cdl_netlist=netlist_cdl,
+                                    dut_sim_netlist=netlist_sim)
+                     for dsn_name, cv_info_list, netlist_cdl, netlist_sim in dut_info_list]
 
         results = batch_async_task(coro_list)
         if results is not None:
@@ -733,8 +748,8 @@ class DesignManager:
     def test_layout(self, gen_sch: bool = True) -> None:
         """Create a test schematic and layout for debugging purposes"""
 
+        lay_params = self._info.first_params
         dsn_name = self._info.dsn_basename + '_TEST'
-        lay_params = self._info.get_first_params(is_sch=False)
 
         print('create test layout')
         sch_name_param_list = self.create_dut_layouts([(dsn_name, lay_params)])
@@ -744,36 +759,38 @@ class DesignManager:
             self.create_dut_schematics(sch_name_param_list, gen_wrappers=False)
         print('done')
 
-    def create_designs(self, create_layout: bool) -> Tuple[List[str], List[str], Path, Path]:
+    def create_designs(self) -> List[Tuple[str, List[Any], Path, Path]]:
         """Create DUT schematics/layouts.
         """
-        dsn_param_iter = self._info.dsn_param_iter(is_sch=not create_layout)
-        if create_layout:
+        dsn_param_iter = self._info.dsn_param_iter()
+        if self._info.create_layout:
             print('creating all layouts.')
             dsn_param_iter = self.create_dut_layouts(dsn_param_iter)
             print('layout creation done.')
 
-        print('creating all schematics.')
-        tmp = self.create_dut_schematics(dsn_param_iter, gen_wrappers=True)
-        dut_cv_info_list, dut_cdl_netlist, dut_sim_netlist = tmp
-        print('design generation done.')
-
-        return dut_cv_info_list, dut_cdl_netlist, dut_sim_netlist
+        return self.create_dut_schematics(dsn_param_iter, gen_wrappers=True)
 
     def create_dut_schematics(self, name_param_iter: Iterable[Tuple[str, Dict[str, Any]]],
                               gen_wrappers: bool = True
-                              ) -> Sequence[Tuple[str, List[Any], Path, Path]]:
+                              ) -> List[Tuple[str, List[Any], Path, Path]]:
+        root_dir = self._info.root_dir
         dut_lib = self._info.dut_lib
         dut_cell = self._info.dut_cell
         impl_lib = self._info.impl_lib
         wrapper_list = self._info.specs['dut_wrappers']
 
-        results = []
+        netlist_type = self._prj.sim_access.netlist_type
+        ext = get_extension(netlist_type)
+        dir_path = root_dir / 'designs' / impl_lib
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+        results: List[Tuple[str, List[Any], Path, Path]] = []
         tot_info_list = []
+        print('Generating DUT schematics and netlists')
         for cur_name, sch_params in name_param_iter:
             gen_cls = cast(Type[ModuleType], ModuleDB.get_schematic_class(dut_lib, dut_cell))
             sch_master = self._sch_db.new_master(gen_cls, sch_params)
-            info_list = [(sch_master, cur_name)]
+            cur_info_list = [(sch_master, cur_name)]
             if gen_wrappers:
                 for wrapper_config in wrapper_list:
                     wrapper_name = wrapper_config['name']
@@ -785,29 +802,26 @@ class DesignManager:
                     gen_cls_wrap = cast(Type[ModuleType],
                                         ModuleDB.get_schematic_class(wrapper_lib, wrapper_cell))
                     sch_master_wrap = self._sch_db.new_master(gen_cls_wrap, wrapper_params)
-                    info_list.append((sch_master_wrap,
-                                      self.get_wrapper_name(cur_name, wrapper_name)))
+                    cur_info_list.append((sch_master_wrap,
+                                          self.get_wrapper_name(cur_name, wrapper_name)))
 
-        self._sch_db.batch_schematic(info_list)
+            dut_netlist_sim = dir_path / f'{cur_name}.{ext}'
+            dut_netlist_cdl = dir_path / f'{cur_name}.cdl'
 
-        netlist_type = self._prj.sim_access.netlist_type
-        ext = get_extension(netlist_type)
+            dut_cv_info_list = []
+            self._sch_db.batch_schematic(cur_info_list, output=netlist_type, top_subckt=True,
+                                         cv_info_out=dut_cv_info_list, fname=str(dut_netlist_sim))
+            self._sch_db.batch_schematic(cur_info_list, output=DesignOutput.CDL,
+                                         fname=str(dut_netlist_cdl))
 
-        dut_cv_info_list = []
-        dir_path = self._info.root_dir / 'designs' / impl_lib
-        dir_path.mkdir(parents=True, exist_ok=True)
-        dut_netlist_sim = dir_path / f'{dut_cell}.{ext}'
-        print('Creating DUT netlist')
-        self._sch_db.batch_schematic(info_list, output=netlist_type, top_subckt=True,
-                                     cv_info_out=dut_cv_info_list, fname=str(dut_netlist_sim))
-        print('DUT netlist done')
+            tot_info_list.extend(cur_info_list)
+            results.append((cur_name, dut_cv_info_list, dut_netlist_cdl, dut_netlist_sim))
 
-        dut_netlist_cdl = dir_path / f'{dut_cell}.cdl'
-        print('Creating DUT CDL netlist')
-        self._sch_db.batch_schematic(info_list, output=DesignOutput.CDL, fname=str(dut_netlist_cdl))
-        print('DUT CDL netlist done')
+        print('DUT generation and netlisting done.  Creating schematics')
+        self._sch_db.batch_schematic(tot_info_list)
+        print('schematic creation done.')
 
-        return dut_cv_info_list, dut_netlist_cdl, dut_netlist_sim
+        return results
 
     def create_dut_layouts(self, name_param_iter: Iterable[Tuple[str, Dict[str, Any]]]
                            ) -> Sequence[Tuple[str, Dict[str, Any]]]:
