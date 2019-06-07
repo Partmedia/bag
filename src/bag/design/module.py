@@ -405,11 +405,8 @@ class Module(DesignMaster):
             for term, net in conn_list:
                 inst.update_connection(new_name, term, net)
 
-    def delete_instance(self, inst_name: str) -> bool:
-        """Delete the instance with the given name.
-
-        This method is identical to remove_instance().  It's here only for backwards
-        compatibility.
+    def remove_instance(self, inst_name: str) -> bool:
+        """Removes the instance with the given name.
 
         Parameters
         ----------
@@ -425,6 +422,14 @@ class Module(DesignMaster):
         if success:
             del self.instances[inst_name]
         return success
+
+    def delete_instance(self, inst_name: str) -> bool:
+        """Delete the instance with the given name.
+
+        This method is identical to remove_instance().  It's here only for backwards
+        compatibility.
+        """
+        return self.remove_instance(inst_name)
 
     def replace_instance_master(self, inst_name: str, lib_name: str, cell_name: str,
                                 static: bool = False, keep_connections: bool = False) -> None:

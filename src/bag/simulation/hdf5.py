@@ -96,6 +96,7 @@ def save_sim_data_hdf5(data: SimData, hdf5_path: Path, compress: bool = True,
     # create parent directory
     hdf5_path.parent.mkdir(parents=True, exist_ok=True)
 
+    str_kwargs: Dict[str, Any] = {}
     dset_kwargs: Dict[str, Any] = {}
     if compress:
         if chunk_size_mb == 0:
@@ -107,15 +108,15 @@ def save_sim_data_hdf5(data: SimData, hdf5_path: Path, compress: bool = True,
     with h5py.File(str(hdf5_path), 'w', libver='latest', rdcc_nbytes=cache_size_mb * MB_SIZE,
                    rdcc_w0=1.0, rdcc_nslots=cache_modulus) as f:
         arr = np.array(data.sim_envs, dtype='S')
-        _set_chunk_args(dset_kwargs, chunk_size_mb, arr.shape, arr.dtype.itemsize)
-        f.create_dataset('__corners', data=arr, **dset_kwargs)
+        _set_chunk_args(str_kwargs, chunk_size_mb, arr.shape, arr.dtype.itemsize)
+        f.create_dataset('__corners', data=arr, **str_kwargs)
         for group in data.group_list:
             data.open_group(group)
             grp = f.create_group(group)
             grp.attrs['is_md'] = data.is_md
             arr = np.array(data.sweep_params, dtype='S')
-            _set_chunk_args(dset_kwargs, chunk_size_mb, arr.shape, arr.dtype.itemsize)
-            grp.create_dataset('__sweep_params', data=arr, **dset_kwargs)
+            _set_chunk_args(str_kwargs, chunk_size_mb, arr.shape, arr.dtype.itemsize)
+            grp.create_dataset('__sweep_params', data=arr, **str_kwargs)
             for name, arr in data.items():
                 _set_chunk_args(dset_kwargs, chunk_size_mb, arr.shape, arr.dtype.itemsize)
                 grp.create_dataset(name, data=arr, **dset_kwargs)
