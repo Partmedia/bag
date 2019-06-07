@@ -362,6 +362,8 @@ class AnalysisData:
         self._swp_pars = ImmutableList(sweep_params)
         self._data = data
         self._is_md = is_md
+        swp_set = set(sweep_params)
+        self._signals = ImmutableList([key for key in data.keys() if key not in swp_set])
 
     @property
     def is_md(self) -> bool:
@@ -370,6 +372,10 @@ class AnalysisData:
     @property
     def sweep_params(self) -> ImmutableList[str]:
         return self._swp_pars
+
+    @property
+    def signals(self) -> ImmutableList[str]:
+        return self._signals
 
     def __getitem__(self, item: str) -> np.ndarray:
         return self._data[item]
@@ -411,6 +417,10 @@ class SimData:
     @property
     def sweep_params(self) -> ImmutableList[str]:
         return self._cur_ana.sweep_params
+
+    @property
+    def signals(self) -> ImmutableList[str]:
+        return self._cur_ana.signals
 
     @property
     def is_md(self) -> bool:
