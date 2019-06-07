@@ -1289,7 +1289,7 @@ PYTEST:
   cell_name: net_bus
   view_name: schematic
   bbox:
-    - -140
+    - -220
     - -600
     - 768
     - -210
@@ -1302,13 +1302,13 @@ PYTEST:
             cell_name: ipin
             view_name: symbol
             xform:
-              - -80
+              - -160
               - -220
               - R0
             bbox:
-              - -137
+              - -217
               - -246
-              - -80
+              - -160
               - -210
             connections:
               {}
@@ -1320,7 +1320,7 @@ PYTEST:
             purpose: 237
             net: ""
             origin:
-              - -110
+              - -190
               - -220
             alignment: 7
             orient: R0
@@ -1341,13 +1341,13 @@ PYTEST:
             cell_name: ipin
             view_name: symbol
             xform:
-              - -80
+              - -160
               - -240
               - R0
             bbox:
-              - -137
+              - -217
               - -266
-              - -80
+              - -160
               - -230
             connections:
               {}
@@ -1359,7 +1359,7 @@ PYTEST:
             purpose: 237
             net: ""
             origin:
-              - -110
+              - -190
               - -240
             alignment: 7
             orient: R0
@@ -1372,6 +1372,45 @@ PYTEST:
             format: 1
       stype: 2
       ttype: 0
+    mid<3:0>:
+      obj:
+        - 1
+        - inst:
+            lib_name: basic
+            cell_name: opin
+            view_name: symbol
+            xform:
+              - -120
+              - -320
+              - R0
+            bbox:
+              - -120
+              - -346
+              - -63
+              - -310
+            connections:
+              {}
+            params:
+              {}
+            is_primitive: true
+          attr:
+            layer: 229
+            purpose: 237
+            net: ""
+            origin:
+              - -95
+              - -320
+            alignment: 1
+            orient: R0
+            font: 5
+            height: 10
+            overbar: false
+            visible: true
+            drafting: true
+            attr_type: 0
+            format: 1
+      stype: 0
+      ttype: 1
     vin:
       obj:
         - 1
@@ -1380,13 +1419,13 @@ PYTEST:
             cell_name: ipin
             view_name: symbol
             xform:
-              - -80
+              - -160
               - -280
               - R0
             bbox:
-              - -137
+              - -217
               - -306
-              - -80
+              - -160
               - -270
             connections:
               {}
@@ -1398,7 +1437,7 @@ PYTEST:
             purpose: 237
             net: ""
             origin:
-              - -110
+              - -190
               - -280
             alignment: 7
             orient: R0
@@ -1419,13 +1458,13 @@ PYTEST:
             cell_name: opin
             view_name: symbol
             xform:
-              - -40
+              - -120
               - -280
               - R0
             bbox:
-              - -40
+              - -120
               - -306
-              - 17
+              - -63
               - -270
             connections:
               {}
@@ -1437,7 +1476,7 @@ PYTEST:
             purpose: 237
             net: ""
             origin:
-              - -15
+              - -95
               - -280
             alignment: 1
             orient: R0
@@ -1685,7 +1724,6 @@ PYTEST:
       connections:
         VDD: VDD
         VSS: VSS
-        vin: mid
         vin<3:0>: mid<3:0>
         vout: vout
       params:
@@ -1694,22 +1732,22 @@ PYTEST:
   props:
     connectivityLastUpdated:
       - 0
-      - 579
+      - 1113
     instance#:
       - 0
       - 2
     lastSchematicExtraction:
       - 4
-      - time_val: 1557516553
+      - time_val: 1559712708
     net#:
       - 0
       - 0
     pin#:
       - 0
-      - 4
+      - 5
     schGeometryLastUpdated:
       - 0
-      - 579
+      - 1113
     schGeometryVersion:
       - 3
       - sch.ds.gm.1.4
@@ -1719,10 +1757,10 @@ PYTEST:
   app_defs:
     _dbLastSavedCounter:
       - 0
-      - 579
+      - 1113
     _dbvCvTimeStamp:
       - 0
-      - 579
+      - 1113
     cdbRevision:
       - 0
       - 227612
@@ -1762,6 +1800,19 @@ PYTEST__symbol:
             - -96
       stype: 2
       ttype: 0
+    mid<3:0>:
+      obj:
+        - 0
+        - layer: 229
+          purpose: 4294967295
+          net: ""
+          bbox:
+            - 276
+            - -44
+            - 284
+            - -36
+      stype: 0
+      ttype: 1
     vin:
       obj:
         - 0
@@ -1953,32 +2004,60 @@ PYTEST__symbol:
           - -60
           - 240
           - 50
+    -
+      - 5
+      - layer: 231
+        purpose: 4294967295
+        net: ""
+        points:
+          -
+            - 280
+            - -40
+          -
+            - 240
+            - -40
+    -
+      - 7
+      - layer: 229
+        purpose: 237
+        net: ""
+        origin:
+          - 234
+          - -40
+        alignment: 7
+        orient: R0
+        font: 5
+        height: 10
+        overbar: false
+        visible: true
+        drafting: true
+        text: mid<3:0>
   instances:
     {}
   props:
     interfaceLastChanged:
       - 4
-      - time_val: 1557516549
+      - time_val: 1559712693
     partName:
       - 3
       - net_bus
     pin#:
       - 0
-      - 4
+      - 5
     portOrder:
       - 5
       - name: ILList
-        bin_val: ("vout" "VDD" "VSS" "vin")
+        bin_val: ("mid" "vout" "VDD" "VSS" "vin")
     vendorName:
       - 3
       - ""
   app_defs:
     _dbLastSavedCounter:
       - 0
-      - 71
+      - 99
     _dbvCvTimeStamp:
       - 0
-      - 71
+      - 99
     cdbRevision:
       - 0
       - 227612

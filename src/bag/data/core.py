@@ -69,6 +69,7 @@ class Waveform(object):
         interpolation extension mode.  See documentation for InterpolatedUnivariateSpline.
 
     """
+
     def __init__(self, xvec, yvec, xtol, order=3, ext=3):
         self._xvec = xvec
         self._yvec = yvec
@@ -220,7 +221,7 @@ class Waveform(object):
         xval_list = self.get_all_crossings(threshold, start=start, stop=stop, edge=edge)
         if len(xval_list) < n:
             return None
-        return xval_list[n-1]
+        return xval_list[n - 1]
 
     def to_arrays(self, xmin=None, xmax=None):
         """Returns the X and Y arrays representing this waveform.
@@ -356,7 +357,8 @@ class Waveform(object):
 
     def __add__(self, other):
         if np.isscalar(other):
-            return Waveform(np.array(self.xvec), self.yvec + other, self.xtol, order=self.order, ext=self.ext)
+            return Waveform(np.array(self.xvec), self.yvec + other, self.xtol, order=self.order,
+                            ext=self.ext)
         elif isinstance(other, Waveform):
             new_order = max(self.order, other.order)
             xvec, yvec = self._add_xy(other)
@@ -370,7 +372,8 @@ class Waveform(object):
     def __mul__(self, scale):
         if not np.isscalar(scale):
             raise ValueError("Can only multiply by scalar.")
-        return Waveform(np.array(self.xvec), scale * self.yvec, self.xtol, order=self.order, ext=self.ext)
+        return Waveform(np.array(self.xvec), scale * self.yvec, self.xtol, order=self.order,
+                        ext=self.ext)
 
     def __rmul__(self, scale):
         return self.__mul__(scale)
