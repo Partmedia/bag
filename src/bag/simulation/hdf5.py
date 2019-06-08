@@ -20,13 +20,19 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from blosc_filter_pybind11 import register_blosc_filter
 
 from ..util.search import BinaryIterator
 from .data import AnalysisData, SimData
 
-# register the blosc filter on load
-BLOSC_FILTER = register_blosc_filter()
+try:
+    # register the blosc filter on load
+    import blosc_filter_pybind11
+    BLOSC_FILTER = blosc_filter_pybind11.register_blosc_filter()
+except ImportError:
+    print('WARNING: Error registering BLOSC filter for HDF5.  Default to LZF')
+    blosc_filter_pybind11 = None
+    BLOSC_FILTER = None
+
 MB_SIZE = 1024**2
 
 
@@ -100,9 +106,13 @@ def save_sim_data_hdf5(data: SimData, hdf5_path: Path, compress: bool = True,
     if compress:
         if chunk_size_mb == 0:
             raise ValueError('Compression can only be done with chunk storage')
-        dset_kwargs['compression'] = BLOSC_FILTER
-        dset_kwargs['compression_opts'] = (0, 0, 0, 0, 5, 1, 0)
-        dset_kwargs['shuffle'] = False
+        if BLOSC_FILTER is None:
+            dset_kwargs['compression'] = 'lzf'
+            dset_kwargs['shuffle'] = True
+        else:
+            dset_kwargs['compression'] = BLOSC_FILTER
+            dset_kwargs['compression_opts'] = (0, 0, 0, 0, 5, 1, 0)
+            dset_kwargs['shuffle'] = False
 
     with h5py.File(str(hdf5_path), 'w', libver='latest', rdcc_nbytes=cache_size_mb * MB_SIZE,
                    rdcc_w0=1.0, rdcc_nslots=cache_modulus) as f:
