@@ -46,7 +46,7 @@
 
 from __future__ import annotations
 
-from typing import TypeVar, Any, Generic, Dict, Iterable, Tuple, Union, Optional
+from typing import TypeVar, Any, Generic, Dict, Iterable, Tuple, Union, Optional, overload
 
 import sys
 import bisect
@@ -120,8 +120,15 @@ class ImmutableList(Hashable, Sequence, Generic[T]):
     def __iter__(self) -> Iterable[T]:
         return iter(self._content)
 
-    def __getitem__(self, idx: int) -> T:
-        return self._content[idx]
+    @overload
+    def __getitem__(self, idx: int) -> T: ...
+    @overload
+    def __getitem__(self, idx: slice) -> ImmutableList[T]: ...
+
+    def __getitem__(self, idx) -> T:
+        if isinstance(idx, int):
+            return self._content[idx]
+        return ImmutableList(self._content[idx])
 
     def __contains__(self, val: Any) -> bool:
         return val in self._content
