@@ -55,8 +55,8 @@ from pathlib import Path
 
 from pybag.enum import DesignOutput
 
-from ..concurrent.core import SubProcessManager
-from .data import SimNetlistInfo, SimData, SweepInfoType
+from ..concurrent.core import SubProcessManager, batch_async_task
+from .data import SimNetlistInfo, SimData
 
 
 def get_corner_temp(env_str: str) -> Tuple[str, int]:
@@ -110,7 +110,7 @@ class SimAccess(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def async_run_simulation(self, netlist: Path, sim_tag: str, stype: SweepInfoType) -> None:
+    async def async_run_simulation(self, netlist: Path, sim_tag: str) -> None:
         """A coroutine for simulation a testbench.
 
         Parameters
@@ -119,8 +119,6 @@ class SimAccess(abc.ABC):
             the netlist file name.
         sim_tag : str
             optional simulation name.  Empty for default.
-        stype : SweepInfoType
-            the parameter sweep type.
         """
         pass
 
@@ -133,6 +131,10 @@ class SimAccess(abc.ABC):
     def config(self) -> Dict[str, Any]:
         """Dict[str, Any]: simulation configurations."""
         return self._config
+
+    def run_simulation(self, netlist: Path, sim_tag: str) -> None:
+        coro = self.async_run_simulation(netlist, sim_tag)
+        batch_async_task([coro])
 
 
 class SimProcessManager(SimAccess, abc.ABC):

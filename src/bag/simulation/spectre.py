@@ -233,7 +233,7 @@ class SpectreInterface(SimProcessManager):
         print(f'HDF5 read took {stop - start:.4g} seconds.')
         return ans
 
-    async def async_run_simulation(self, netlist: Path, sim_tag: str, stype: SweepInfoType) -> None:
+    async def async_run_simulation(self, netlist: Path, sim_tag: str) -> None:
         if not netlist.is_file():
             raise FileNotFoundError(f'netlist {netlist} is not a file.')
 
