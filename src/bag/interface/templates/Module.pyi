@@ -2,8 +2,8 @@
 
 from typing import Dict, Any
 
-import os
 import pkg_resources
+from pathlib import Path
 
 from bag.design.module import Module
 from bag.design.database import ModuleDB
@@ -18,8 +18,8 @@ class {{ lib_name }}__{{ cell_name }}(Module):
     """
 
     yaml_file = pkg_resources.resource_filename(__name__,
-                                                os.path.join('netlist_info',
-                                                             '{{ cell_name }}.yaml'))
+                                                str(Path('netlist_info',
+                                                         '{{ cell_name }}.yaml')))
 
     def __init__(self, database: ModuleDB, params: Param, **kwargs: Any) -> None:
         Module.__init__(self, self.yaml_file, database, params, **kwargs)
