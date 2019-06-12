@@ -106,7 +106,9 @@ def _write_sweep_start(lines: List[str], swp_info: SweepInfo, swp_idx: int, prec
 def _write_analysis(lines: List[str], sim_env: str, ana: AnalysisInfo, precision: int) -> None:
     cur_line = f'__{ana.name}__{sim_env}__ {ana.name}'
     if isinstance(ana, AnalysisTran):
-        cur_line += f' start={ana.start} stop={ana.stop} strobeperiod={ana.strobe}'
+        cur_line += f' start={ana.start} stop={ana.stop}'
+        if ana.strobe > 0:
+            cur_line += f' strobeperiod={ana.strobe}'
     elif isinstance(ana, AnalysisSweep1D):
         par = ana.param
         sweep_str = _get_sweep_str(par, ana.sweep, precision)
