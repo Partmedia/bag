@@ -29,7 +29,7 @@ from ..util.immutable import ImmutableList, ImmutableSortedDict
 from .data import (
     MDSweepInfo, SimData, SetSweepInfo, SweepLinear, SweepLog, SweepList, SimNetlistInfo,
     SweepSpec, AnalysisInfo, AnalysisAC, AnalysisSP, AnalysisNoise, AnalysisTran,
-    AnalysisSweep1D, SweepInfoType
+    AnalysisSweep1D
 )
 from .base import SimProcessManager, get_corner_temp
 from .hdf5 import load_sim_data_hdf5
@@ -234,6 +234,7 @@ class SpectreInterface(SimProcessManager):
         return ans
 
     async def async_run_simulation(self, netlist: Path, sim_tag: str) -> None:
+        netlist = netlist.resolve()
         if not netlist.is_file():
             raise FileNotFoundError(f'netlist {netlist} is not a file.')
 
