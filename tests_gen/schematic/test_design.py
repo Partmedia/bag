@@ -120,6 +120,7 @@ def test_design(tmpdir,
         # No schematic tests
         return
 
+    impl_cell = sch_design_params['top_cell_name']
     extension = get_extension(output_type)
 
     if is_model_type(output_type):
@@ -144,10 +145,10 @@ def test_design(tmpdir,
     out_base_name = '{}.{}'.format(base, extension)
     path = tmpdir.join(out_base_name)
     if is_model_type(output_type):
-        module_db.batch_model([(dsn, 'PYTEST', model_params)], output=output_type,
+        module_db.batch_model([(dsn, impl_cell, model_params)], output=output_type,
                               fname=str(path), **options)
     else:
-        module_db.instantiate_master(output_type, dsn, top_cell_name='PYTEST', fname=str(path),
+        module_db.instantiate_master(output_type, dsn, top_cell_name=impl_cell, fname=str(path),
                                      **options)
 
     assert path.check(file=1)

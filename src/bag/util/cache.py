@@ -597,14 +597,14 @@ class MasterDB(abc.ABC):
             parameters associated with the given output type.
         """
         # configure renaming dictionary.  Verify that renaming dictionary is one-to-one.
-        rename = {}
-        reverse_rename = {}  # type: Dict[str, str]
+        rename: Dict[str, str] = {}
+        reverse_rename: Dict[str, str] = {}
         if rename_dict:
             for key, val in rename_dict.items():
                 if key != val:
                     if val in reverse_rename:
-                        raise ValueError('Both %s and %s are renamed '
-                                         'to %s' % (key, reverse_rename[val], val))
+                        raise ValueError(f'Both {key} and {reverse_rename[val]} are '
+                                         f'renamed to {val}')
                     rename[key] = val
                     reverse_rename[val] = key
 
@@ -612,8 +612,8 @@ class MasterDB(abc.ABC):
             m_name = m.cell_name
             if name and name != m_name:
                 if name in reverse_rename:
-                    raise ValueError('Both %s and %s are renamed '
-                                     'to %s' % (m_name, reverse_rename[name], name))
+                    raise ValueError(f'Both {m_name} and {reverse_rename[name]} are '
+                                     f'renamed to {name}')
                 rename[m_name] = name
                 reverse_rename[name] = m_name
 
@@ -627,7 +627,7 @@ class MasterDB(abc.ABC):
             print('Retrieving master contents')
 
         # use ordered dict so that children are created before parents.
-        info_dict = OrderedDict()  # type: Dict[str, DesignMaster]
+        info_dict: Mapping[str, DesignMaster] = OrderedDict()
         start = time.time()
         for master, _ in info_list:
             self._batch_output_helper(info_dict, master)
@@ -637,7 +637,7 @@ class MasterDB(abc.ABC):
                         for master in info_dict.values()]
 
         if debug:
-            print('master content retrieval took %.4g seconds' % (end - start))
+            print(f'master content retrieval took {end-start:.4g} seconds')
 
         self.create_masters_in_db(output, self.lib_name, content_list, debug=debug, **kwargs)
 

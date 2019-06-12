@@ -160,6 +160,8 @@ def setup_test_data(metafunc, data_name: str, data_type: str) -> None:
                 content['test_output_dir'] = str(pathlib.Path(pkg) / data_type / test_id)
                 content['lib_name'] = pkg
                 content['cell_name'] = test_id.rsplit('_', maxsplit=1)[0]
+                if 'top_cell_name' not in content:
+                    content['top_cell_name'] = 'PYTEST'
                 for fpath in p.iterdir():
                     if fpath.stem.startswith('out'):
                         content['{}_{}'.format(fpath.stem, fpath.suffix[1:])] = str(
