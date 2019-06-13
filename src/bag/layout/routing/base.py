@@ -624,3 +624,44 @@ class TrackManager(object):
 
         delta = self._get_align_delta(tot_ntr, num_used, alignment)
         return [idx + delta for idx in idx_list]
+
+    def get_next_rel_tid(self,
+                         warr_tid_obj: Union[TrackID, WireArray],
+                         cur_type: Union[str, int],
+                         next_type: Union[str, int],
+                         up_idx: int = 1) -> TrackID:
+        """Computes next TrackID relative the WireArray or TrackID object and given wire types
+
+        Parameters
+        ----------
+        warr_tid_obj: Union[TrackID, WireArray]
+            the wire array or track id object used as the reference
+        cur_type: Union[str, int]
+            the wire type of current reference warr/tid
+        next_type: Union[str, int]
+            the wire type of the returned tid
+        up_idx: int
+            the number of spacings to skip
+            +1 means the immediate next track id
+            -1 means immediate previous track id,
+            +2 means the one after the next track id, etc.
+            if |up_idx| > 1, the skipped distance is
+            space(cur_type, next_type) + (|up_idx| - 1) * space(next_type, next_type)
+
+        Returns
+        -------
+        track_id : TrackID
+            the TrackID object of the next
+        """
+
+        layer_id = warr_tid_obj.layer_id
+        cur_idx = warr_tid_obj.base_index if isinstance(warr_tid_obj, TrackID) else \
+            warr_tid_obj.track_id.base_index
+
+        thtr = cur_idx
+        for _ in range(abs(up_idx)):
+            thtr = self.get_next_track(layer_id, thtr, cur_type, next_type, up_idx > 0)
+            cur_type = next_type
+
+        return TrackID(layer_id, thtr, width=self.get_width(layer_id, next_type),
+                       pitch=self.get_sep(layer_id, (cur_type, next_type)))
