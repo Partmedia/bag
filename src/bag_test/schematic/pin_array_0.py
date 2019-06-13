@@ -53,8 +53,6 @@ class bag_test__pin_array_0(Module):
         if mult > 1:
             bus_name = f'<{mult - 1}:0>'
             in_name = f'vin{bus_name}'
-            out_name = f'vout{bus_name}'
             self.rename_pin('vin', in_name)
-            self.rename_pin('vout', out_name)
             self.rename_instance('XIN', f'XIN{bus_name}', [('noConn', in_name)])
-            self.rename_instance('XOUT', f'XOUT{bus_name}', [('noConn', out_name)])
+        
