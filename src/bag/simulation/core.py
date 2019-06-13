@@ -141,7 +141,7 @@ class TestbenchManager(abc.ABC):
         self._sim.create_netlist(output_path, tb_netlist_path, netlist_info, self._precision)
         # run simulation and save/return raw result
         print(f'Simulating {self._tb_name}')
-        await self._sim.async_run_simulation(output_path, 'sim', netlist_info.sweep_type)
+        await self._sim.async_run_simulation(output_path, 'sim')
         print(f'Finished simulating {self._tb_name}')
 
     def load_sim_data(self) -> SimData:

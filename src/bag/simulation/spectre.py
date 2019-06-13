@@ -29,7 +29,7 @@ from ..util.immutable import ImmutableList, ImmutableSortedDict
 from .data import (
     MDSweepInfo, SimData, SetSweepInfo, SweepLinear, SweepLog, SweepList, SimNetlistInfo,
     SweepSpec, AnalysisInfo, AnalysisAC, AnalysisSP, AnalysisNoise, AnalysisTran,
-    AnalysisSweep1D, SweepInfoType
+    AnalysisSweep1D
 )
 from .base import SimProcessManager, get_corner_temp
 from .hdf5 import load_sim_data_hdf5
@@ -106,7 +106,9 @@ def _write_sweep_start(lines: List[str], swp_info: SweepInfo, swp_idx: int, prec
 def _write_analysis(lines: List[str], sim_env: str, ana: AnalysisInfo, precision: int) -> None:
     cur_line = f'__{ana.name}__{sim_env}__ {ana.name}'
     if isinstance(ana, AnalysisTran):
-        cur_line += f' start={ana.start} stop={ana.stop} strobeperiod={ana.strobe}'
+        cur_line += f' start={ana.start} stop={ana.stop}'
+        if ana.strobe > 0:
+            cur_line += f' strobeperiod={ana.strobe}'
     elif isinstance(ana, AnalysisSweep1D):
         par = ana.param
         sweep_str = _get_sweep_str(par, ana.sweep, precision)
@@ -233,7 +235,8 @@ class SpectreInterface(SimProcessManager):
         print(f'HDF5 read took {stop - start:.4g} seconds.')
         return ans
 
-    async def async_run_simulation(self, netlist: Path, sim_tag: str, stype: SweepInfoType) -> None:
+    async def async_run_simulation(self, netlist: Path, sim_tag: str) -> None:
+        netlist = netlist.resolve()
         if not netlist.is_file():
             raise FileNotFoundError(f'netlist {netlist} is not a file.')
 
