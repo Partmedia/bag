@@ -625,12 +625,13 @@ class TrackManager(object):
         delta = self._get_align_delta(tot_ntr, num_used, alignment)
         return [idx + delta for idx in idx_list]
 
-    def get_next_rel_tid(self,
-                         warr_tid_obj: Union[TrackID, WireArray],
-                         cur_type: Union[str, int],
-                         next_type: Union[str, int],
-                         up_idx: int = 1) -> TrackID:
-        """Computes next TrackID relative the WireArray or TrackID object and given wire types
+    def get_next_track_obj(self,
+                           warr_tid_obj: Union[TrackID, WireArray],
+                           cur_type: Union[str, int],
+                           next_type: Union[str, int],
+                           count_rel_tracks: int = 1,
+                           **kwargs) -> TrackID:
+        """Computes next TrackID relative the WireArray or TrackID object, given wire types
 
         Parameters
         ----------
@@ -640,28 +641,32 @@ class TrackManager(object):
             the wire type of current reference warr/tid
         next_type: Union[str, int]
             the wire type of the returned tid
-        up_idx: int
+        count_rel_tracks: int
             the number of spacings to skip
             +1 means the immediate next track id
             -1 means immediate previous track id,
             +2 means the one after the next track id, etc.
-            if |up_idx| > 1, the skipped distance is
-            space(cur_type, next_type) + (|up_idx| - 1) * space(next_type, next_type)
+            if |count_rel_tracks| > 1, the skipped distance is
+            space(cur_type, next_type) + (|count_rel_tracks| - 1) * space(next_type, next_type)
 
         Returns
         -------
         track_id : TrackID
-            the TrackID object of the next
+            the TrackID object of the next track id
         """
 
         layer_id = warr_tid_obj.layer_id
-        cur_idx = warr_tid_obj.base_index if isinstance(warr_tid_obj, TrackID) else \
-            warr_tid_obj.track_id.base_index
+        if isinstance(warr_tid_obj, TrackID):
+            cur_idx = warr_tid_obj.base_index
+        else:
+            cur_idx = warr_tid_obj.track_id.base_index
 
-        thtr = cur_idx
-        for _ in range(abs(up_idx)):
-            thtr = self.get_next_track(layer_id, thtr, cur_type, next_type, up_idx > 0)
-            cur_type = next_type
+        sep0 = self.get_sep(layer_id, (cur_type, next_type), **kwargs)
+        sep1 = self.get_sep(layer_id, (next_type, next_type), **kwargs)
+        cur_idx = HalfInt.convert(cur_idx)
 
-        return TrackID(layer_id, thtr, width=self.get_width(layer_id, next_type),
-                       pitch=self.get_sep(layer_id, (cur_type, next_type)))
+        sign = count_rel_tracks > 0
+        delta = sep0 + (abs(count_rel_tracks) - 1) * sep1
+        next_tidx = cur_idx + (2 * sign - 1) * delta
+
+        return TrackID(layer_id, next_tidx, width=self.get_width(layer_id, next_type))
