@@ -55,4 +55,3 @@ class bag_test__pin_array_0(Module):
             in_name = f'vin{bus_name}'
             self.rename_pin('vin', in_name)
             self.rename_instance('XIN', f'XIN{bus_name}', [('noConn', in_name)])
-        
