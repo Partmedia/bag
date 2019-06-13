@@ -56,7 +56,7 @@ import abc
 from itertools import product
 
 from pybag.enum import (
-    PathStyle, BlockageType, BoundaryType, GeometryMode, DesignOutput, Orient2D,
+    PathStyle, BlockageType, BoundaryType, DesignOutput, Orient2D,
     Orientation, Direction, MinLenMode, RoundMode
 )
 from pybag.core import (
@@ -389,16 +389,6 @@ class TemplateBase(DesignMaster):
     def layout_cellview(self) -> PyLayCellView:
         """PyLayCellView: The internal layout object."""
         return self._layout
-
-    def set_geometry_mode(self, mode: GeometryMode) -> None:
-        """Sets the geometry mode of this layout.
-
-        Parameters
-        ----------
-        mode : GeometryMode
-            the geometry mode.
-        """
-        self._layout.set_geometry_mode(mode.value)
 
     def get_rect_bbox(self, lay_purp: Tuple[str, str]) -> BBox:
         """Returns the overall bounding box of all rectangles on the given layer.
@@ -1301,17 +1291,17 @@ class TemplateBase(DesignMaster):
                 if min_len_mode is not None:
                     # extend track to meet minimum length
                     # make sure minimum length is even so that middle coordinate exists
-                    min_len = grid.get_min_length(tid.layer_id, tid.width, even=True)
                     tr_len = cur_upper - cur_lower
-                    if min_len > tr_len:
-                        ext = min_len - tr_len
+                    next_len = grid.get_next_length(tid.layer_id, tid.width, tr_len, even=True)
+                    if next_len > tr_len:
+                        ext = next_len - tr_len
                         if min_len_mode < 0:
                             cur_lower -= ext
                         elif min_len_mode > 0:
                             cur_upper += ext
                         else:
                             cur_lower -= ext // 2
-                            cur_upper = cur_lower + min_len
+                            cur_upper = cur_lower + next_len
 
                 new_warr = WireArray(tid, cur_lower, cur_upper)
                 self._layout.add_warr(new_warr)
@@ -1834,8 +1824,7 @@ class TemplateBase(DesignMaster):
     def fix_track_min_length(self, tr_layer_id: int, width: int, track_lower: int, track_upper: int,
                              min_len_mode: MinLenMode) -> Tuple[int, int]:
         even = min_len_mode is MinLenMode.MIDDLE
-        tr_len = max(track_upper - track_lower, self.grid.get_min_length(tr_layer_id, width,
-                                                                         even=even))
+        tr_len = self.grid.get_next_length(tr_layer_id, width, track_upper - track_lower, even=even)
         if min_len_mode is MinLenMode.LOWER:
             track_lower = track_upper - tr_len
         elif min_len_mode is MinLenMode.UPPER:

@@ -58,7 +58,7 @@ class FillEdgeTest(TemplateBase):
 
         tidxl = grid.coord_to_track(fill_layer, margin, mode=RoundMode.LESS_EQ)
         tidxr = grid.coord_to_track(fill_layer, dim - margin, mode=RoundMode.GREATER_EQ)
-        wlen = grid.get_min_length(fill_layer, 1)
+        wlen = grid.get_min_cont_length(fill_layer, 1)
 
         # fill inner
         self.add_wires(fill_layer, tidxl + 1, margin_le, dim_le - margin_le, num=tidxr - tidxl - 1)
@@ -103,7 +103,7 @@ class FillEdgeCenterTest(TemplateBase):
         dim_q = blk_arr[pdir.value]
 
         w = (int(round(margin * 1.5)) // dim_q) * dim_q
-        wlen = grid.get_min_length(fill_layer, 1)
+        wlen = grid.get_min_cont_length(fill_layer, 1)
         h = 2 * margin_le + 7 * wlen + 5 * sp_le
 
         self.set_size_from_bound_box(fill_layer, BBox(0, 0, w, h), round_up=True,
@@ -169,7 +169,7 @@ class FillEndTest(TemplateBase):
         tidxr = grid.coord_to_track(fill_layer, dim - margin, mode=RoundMode.GREATER_EQ)
         tidx_end = grid.coord_to_track(fill_layer, dim, mode=RoundMode.LESS)
 
-        wlen = grid.get_min_length(fill_layer, 1)
+        wlen = grid.get_min_cont_length(fill_layer, 1)
 
         # fill inner and transverse edges
         gap = (margin_le + wlen) // 2 + sp_le
@@ -212,7 +212,7 @@ class FillCenterTest(TemplateBase):
         dim = bbox.get_dim(pdir)
         dim_le = bbox.get_dim(tdir)
 
-        wlen = grid.get_min_length(fill_layer, 1)
+        wlen = grid.get_min_cont_length(fill_layer, 1)
 
         # fill edges and ends
         tidxl = grid.coord_to_track(fill_layer, margin, mode=RoundMode.LESS_EQ, even=True)
@@ -264,7 +264,7 @@ class FillCenterTest2(TemplateBase):
         tidxr = grid.coord_to_track(fill_layer, dim - margin, mode=RoundMode.GREATER_EQ)
         tidx_end = grid.coord_to_track(fill_layer, dim, mode=RoundMode.LESS)
 
-        wlen = grid.get_min_length(fill_layer, 1)
+        wlen = grid.get_min_cont_length(fill_layer, 1)
 
         # fill inner and transverse edges
         gap = margin_le + wlen + sp_le
