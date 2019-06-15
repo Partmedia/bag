@@ -803,8 +803,9 @@ class DesignManager:
                     wrapper_lib = wrapper_config['lib']
                     wrapper_cell = wrapper_config['cell']
                     wrapper_params = wrapper_config['params'].copy()
-                    wrapper_params['dut_lib'] = impl_lib
-                    wrapper_params['dut_cell'] = cur_name
+                    wrapper_params['dut_lib'] = dut_lib
+                    wrapper_params['dut_cell'] = dut_cell
+                    wrapper_params['dut_params'] = sch_params
                     gen_cls_wrap = cast(Type[ModuleType],
                                         ModuleDB.get_schematic_class(wrapper_lib, wrapper_cell))
                     sch_master_wrap = self._sch_db.new_master(gen_cls_wrap, wrapper_params)
