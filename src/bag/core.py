@@ -48,12 +48,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Dict, Any, Tuple, Optional, Union, Type, Sequence, TypeVar
 
 import os
-import cProfile
-import pstats
-
-from pybag.enum import DesignOutput
 
 from .interface import ZMQDealer
+from .design.database import ModuleDB
 from .layout.routing.grid import RoutingGrid
 from .layout.template import TemplateDB
 from .layout.tech import TechInfo
@@ -68,7 +65,6 @@ if TYPE_CHECKING:
     from .interface.database import DbAccess
     from .layout.template import TemplateBase
     from .design.module import Module
-    from .design.database import ModuleDB
 
     ModuleType = TypeVar('ModuleType', bound=Module)
     TemplateType = TypeVar('TemplateType', bound=TemplateBase)
@@ -224,26 +220,23 @@ class BagProject(object):
         """
         return ModuleDB(self.tech_info, impl_lib, prj=self, **kwargs)
 
-    def generate_cell(self,  # type: BagProject
-                      specs,  # type: Dict[str, Any]
-                      temp_cls,  # type: Type[TemplateType]
-                      sch_cls=None,  # type: Optional[Type[ModuleType]]
-                      gen_lay=True,  # type: bool
-                      gen_sch=False,  # type: bool
-                      run_lvs=False,  # type: bool
-                      run_rcx=False,  # type: bool
-                      debug=False,  # type: bool
-                      profile_fname='',  # type: str
-                      **kwargs,
-                      ):
-        # type: (...) -> Optional[pstats.Stats]
+    def generate_cell(self,  specs: Dict[str, Any],
+                      lay_cls: Optional[Type[TemplateType]] = None,
+                      sch_cls: Optional[Type[ModuleType]] = None,
+                      gen_lay: bool = True,
+                      gen_sch: bool = True,
+                      run_lvs: bool = False,
+                      run_rcx: bool = False,
+                      lay_db: Optional[TemplateDB] = None,
+                      sch_db: Optional[ModuleDB] = None,
+                      rcx_create_schematic: bool = False) -> str:
         """Generate layout/schematic of a given cell from specification file.
 
         Parameters
         ----------
         specs : Dict[str, Any]
             the specification dictionary.
-        temp_cls : Type[TemplateType]
+        lay_cls : Optional[Type[TemplateType]]
             the layout generator class.
         sch_cls : Optional[Type[ModuleType]]
             the schematic generator class.
@@ -255,85 +248,78 @@ class BagProject(object):
             True to run LVS.
         run_rcx : bool
             True to run RCX.
-        debug : bool
-            True to print debug messages.
-        profile_fname : str
-            If not empty, profile layout generation, and save statistics to this file.
-        **kwargs :
-            Additional optional arguments.
+        lay_db : Optional[TemplateDB]
+            the layout database.
+        sch_db : Optional[ModuleDB]
+            the schematic database.
+        rcx_create_schematic : bool
+            if True, create extracted schematic.
 
         Returns
         -------
-        stats : pstats.Stats
-            If profiling is enabled, the statistics object.
+        rcx_netlist : str
+            the extraction netlist.  Empty on error or if extraction is not run.
         """
-        prefix = kwargs.pop('prefix', '')
-        suffix = kwargs.pop('suffix', '')
-        output_lay = kwargs.pop('output_lay', DesignOutput.LAYOUT)
-        output_sch = kwargs.pop('output_sch', DesignOutput.SCHEMATIC)
-        options_lay = kwargs.pop('options_lay', {})
-        options_sch = kwargs.pop('options_sch', {})
+        impl_lib: str = specs['impl_lib']
+        impl_cell: str = specs['impl_cell']
+        params: Dict[str, Any] = specs['params']
 
-        impl_lib = specs['impl_lib']
-        impl_cell = specs['impl_cell']
-        params = specs['params']
-        gen_sch = gen_sch and (sch_cls is not None)
+        has_lay = lay_cls is not None
+        has_sch = sch_cls is not None
+        gen_lay = gen_lay and has_lay
+        gen_sch = gen_sch and has_sch
+        run_lvs = (run_lvs or run_rcx) and gen_lay and gen_sch
+        run_rcx = run_rcx and gen_lay and gen_sch
 
-        if gen_lay or gen_sch:
-            temp_db = self.make_template_db(impl_lib, name_prefix=prefix, name_suffix=suffix)
+        if gen_lay:
+            if lay_db is None:
+                lay_db = self.make_template_db(impl_lib)
 
-            name_list = [impl_cell]
             print('computing layout...')
-            if profile_fname:
-                profiler = cProfile.Profile()
-                profiler.runcall(temp_db.new_master, gen_cls=temp_cls, params=params,
-                                 debug=False)
-                profiler.dump_stats(profile_fname)
-                result = pstats.Stats(profile_fname).strip_dirs()
-            else:
-                result = None
-
-            temp = temp_db.new_master(temp_cls, params=params, debug=debug)
+            lay_master = lay_db.new_template(lay_cls, params=params)
             print('computation done.')
-            temp_list = [temp]
 
-            if gen_lay:
-                print('creating layout...')
-                temp_db.batch_output(output_lay, temp_list, name_list=name_list, debug=debug,
-                                     **options_lay)
-                print('layout done.')
-
-            if gen_sch:
-                module_db = self.make_module_db(impl_lib, name_prefix=prefix, name_suffix=suffix)
-                print('computing schematic...')
-                dsn = module_db.new_master(sch_cls, params=params, debug=debug)
-                print('computation done.')
-                print('creating schematic...')
-                module_db.batch_output(output_sch, [dsn], name_list=[impl_cell], debug=debug,
-                                       **options_sch)
-                print('schematic done.')
+            print('creating layout...')
+            lay_db.batch_layout([(lay_master, impl_cell)])
+            print('layout done.')
+            sch_params = lay_master.sch_params
         else:
-            result = None
+            sch_params = params
+
+        if gen_sch:
+            if sch_db is None:
+                sch_db = self.make_module_db(impl_lib)
+
+            print('computing schematic...')
+            sch_master = sch_db.new_master(sch_cls, params=sch_params)
+            print('computation done.')
+
+            print('creating schematic...')
+            sch_db.batch_schematic([(sch_master, impl_cell)])
+            print('schematic done.')
 
         lvs_passed = False
-        if run_lvs or run_rcx:
-            print('running lvs...')
+        if run_lvs:
+            print('running LVS...')
             lvs_passed, lvs_log = self.run_lvs(impl_lib, impl_cell)
-            print('LVS log: %s' % lvs_log)
             if lvs_passed:
                 print('LVS passed!')
             else:
-                print('LVS failed...')
-        if lvs_passed and run_rcx:
-            print('running rcx...')
-            rcx_passed, rcx_log = self.run_rcx(impl_lib, impl_cell)
-            print('RCX log: %s' % rcx_log)
-            if rcx_passed:
-                print('RCX passed!')
-            else:
-                print('RCX failed...')
+                print(f'LVS failed... log file: {lvs_log}')
 
-        return result
+        rcx_netlist = ''
+        if lvs_passed and run_rcx:
+            print('running RCX...')
+            rcx_netlist, rcx_log = self.run_rcx(impl_lib, impl_cell,
+                                                create_schematic=rcx_create_schematic)
+            if rcx_netlist:
+                print('RCX passed!')
+                if not isinstance(rcx_netlist, str):
+                    rcx_netlist = ''
+            else:
+                print(f'RCX failed... log file: {rcx_log}')
+
+        return rcx_netlist
 
     def create_library(self, lib_name, lib_path=''):
         # type: (str, str) -> None
@@ -484,7 +470,7 @@ class BagProject(object):
                 cell_name,  # type: str
                 **kwargs  # type: Any
                 ):
-        # type: (...) -> Tuple[Union[bool, Optional[str]], str]
+        # type: (...) -> Tuple[Union[bool, str], str]
         """Run RCX on the given cell.
 
         The behavior and the first return value of this method depends on the
@@ -496,8 +482,8 @@ class BagProject(object):
         a boolean value which will be True if RCX succeeds.
 
         If create_schematic is False, this method will run RCX, then return a string
-        which is the extracted netlist filename. If RCX failed, None will be returned
-        instead.
+        which is the extracted netlist filename. If RCX failed, empty string will be returned
+        as the netlist file name.
 
         Parameters
         ----------
@@ -524,7 +510,7 @@ class BagProject(object):
             if create_schematic:
                 return False, ''
             else:
-                return None, ''
+                return '', ''
         return results[0]
 
     def export_layout(self, lib_name, cell_name, out_file, **kwargs):
