@@ -113,26 +113,33 @@ class TrackID(PyTrackID):
                 raise ValueError(f'Invalid index {idx} with {num} wires.')
             return TrackID(self.layer_id, self.base_index + idx * pitch, width=self.width)
         else:
-            start, stop, step = idx.start, idx.stop, idx.step
-            if step:
-                if not isinstance(step, int):
-                    raise ValueError(f'WireArray slicing step {step} has to be integer')
-            else:
+            start = idx.start
+            stop = idx.stop
+            step = idx.step
+            if step is None:
                 step = 1
+            elif not isinstance(step, int):
+                raise ValueError(f'TrackID slicing step {step} has to be integer')
 
-            if start < 0:
+            if start is None:
+                start = 0
+            elif start < 0:
                 start += num
             if start < 0 or start >= num:
                 raise ValueError(f'Invalid start index {start} with {num} wires.')
 
-            if stop < 0:
-                stop += num + 1
+            if stop is None:
+                stop = num
+            elif stop < 0:
+                stop += num
             if stop <= 0 or stop > num:
                 raise ValueError(f'Invalid stop index {stop} with {num} wires.')
 
-            slice_num = (stop - start) // step
+            if stop <= start:
+                raise ValueError('slice got empty TrackID.')
+
             return TrackID(self.layer_id, self.base_index + start * pitch, width=self.width,
-                           num=slice_num, pitch=pitch)
+                           num=(stop - start) // step, pitch=pitch)
 
     def transform(self, xform: Transform, grid: RoutingGrid) -> TrackID:
         """Transform this TrackID."""
