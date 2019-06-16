@@ -505,13 +505,22 @@ class TrackManager(object):
         same_color = kwargs.get('same_color', False)
         half_space = kwargs.get('half_space', self._half_space)
         sp_override = kwargs.get('sp_override', None)
+        if sp_override is not None:
+            sp_dict = self._tr_spaces.copy(append=sp_override)
+        else:
+            sp_dict = self._tr_spaces
 
         # if two specific wires are given, first check if any specific rules exist
-        extra_sep = self._get_space_from_tuple(layer_id, type_tuple, sp_override)
+        extra_sep = self._get_space_from_tuple(layer_id, type_tuple, sp_dict)
         if extra_sep is None:
-            extra_sep = self._get_space_from_tuple(layer_id, type_tuple, self._tr_spaces)
-            if extra_sep is None:
-                extra_sep = 0
+            # check single spacing
+            extra_sep1 = self._get_space_from_tuple(layer_id, (type_tuple[0], ''), sp_dict)
+            if extra_sep1 is None:
+                extra_sep1 = 0
+            extra_sep2 = self._get_space_from_tuple(layer_id, (type_tuple[1], ''), sp_dict)
+            if extra_sep2 is None:
+                extra_sep2 = 0
+            extra_sep = max(extra_sep1, extra_sep2)
 
         w1 = self.get_width(layer_id, type_tuple[0])
         w2 = self.get_width(layer_id, type_tuple[1])
