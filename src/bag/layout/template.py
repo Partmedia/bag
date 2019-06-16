@@ -194,6 +194,7 @@ class TemplateBase(DesignMaster):
         self.prim_top_layer = None
         self.prim_bound_box = None
         self._sch_params: Optional[Dict[str, Any]] = None
+        self._cell_boundary_added: bool = False
 
         # add hidden parameters
         DesignMaster.__init__(self, temp_db, params, **kwargs)
@@ -920,6 +921,26 @@ class TemplateBase(DesignMaster):
             the added boundary object.
         """
         return self._layout.add_boundary(bnd_type, points, commit)
+
+    def add_cell_boundary(self, bbox: BBox) -> None:
+        """Adds cell boundary in this template.
+
+        By default, this method is called when finalizing a template (although the process
+        implementation may override this behavior) to set the cell boundary, which is generally
+        used for DRC or P&R purposes.
+
+        This method can only be called once from the template.  All calls after the first one will
+        be ignored.  Therefore, if you need to set the cell boundary to be something other than
+        the template's bounding box, you can call this in the draw_layout() method.
+
+        Parameters
+        ----------
+        bbox : BBox
+            the cell boundary bounding box.
+        """
+        if not self._cell_boundary_added:
+            self._cell_boundary_added = True
+            self.grid.tech_info.add_cell_boundary(self, bbox)
 
     def reexport(self, port: Port, *,
                  net_name: str = '', label: str = '', show: bool = True) -> None:
