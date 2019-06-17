@@ -229,6 +229,8 @@ class BagProject(object):
                       run_rcx: bool = False,
                       lay_db: Optional[TemplateDB] = None,
                       sch_db: Optional[ModuleDB] = None,
+                      name_prefix: str = '',
+                      name_suffix: str = '',
                       rcx_create_schematic: bool = False) -> str:
         """Generate layout/schematic of a given cell from specification file.
 
@@ -252,6 +254,10 @@ class BagProject(object):
             the layout database.
         sch_db : Optional[ModuleDB]
             the schematic database.
+        name_prefix : str
+            the generated cell name prefix.
+        name_suffix : str
+            the generated cell name suffix.
         rcx_create_schematic : bool
             if True, create extracted schematic.
 
@@ -273,7 +279,8 @@ class BagProject(object):
 
         if gen_lay:
             if lay_db is None:
-                lay_db = self.make_template_db(impl_lib)
+                lay_db = self.make_template_db(impl_lib, name_prefix=name_prefix,
+                                               name_suffix=name_suffix)
 
             print('computing layout...')
             lay_master = lay_db.new_template(lay_cls, params=params)
@@ -288,7 +295,8 @@ class BagProject(object):
 
         if gen_sch:
             if sch_db is None:
-                sch_db = self.make_module_db(impl_lib)
+                sch_db = self.make_module_db(impl_lib, name_prefix=name_prefix,
+                                             name_suffix=name_suffix)
 
             print('computing schematic...')
             sch_master = sch_db.new_master(sch_cls, params=sch_params)

@@ -204,6 +204,7 @@ class TemplateBase(DesignMaster):
             self._grid: RoutingGrid = temp_db.grid
         else:
             self._grid: RoutingGrid = tmp_grid
+        self._show_pins = self.params['show_pins']
 
         # create Cython wrapper object
         self._layout = PyLayCellView(self._grid, self.cell_name)
@@ -292,7 +293,7 @@ class TemplateBase(DesignMaster):
     @property
     def show_pins(self) -> bool:
         """bool: True to show pins."""
-        return self.params['show_pins']
+        return self._show_pins
 
     @property
     def sch_params(self) -> Optional[Dict[str, Any]]:
@@ -610,7 +611,8 @@ class TemplateBase(DesignMaster):
         return self._prim_ports.keys()
 
     def new_template(self, temp_cls: Type[TemplateType], *,
-                     params: Optional[Mapping[str, Any]] = None) -> TemplateType:
+                     params: Optional[Mapping[str, Any]] = None,
+                     show_pins: bool = False) -> TemplateType:
         """Create a new template.
 
         Parameters
@@ -619,6 +621,8 @@ class TemplateBase(DesignMaster):
             the template class to instantiate.
         params : Optional[Mapping[str, Any]]
             the parameter dictionary.
+        show_pins : bool
+            True to pass show_pins in the generated template.
 
         Returns
         -------
@@ -626,9 +630,10 @@ class TemplateBase(DesignMaster):
             the new template instance.
         """
         if isinstance(params, ImmutableSortedDict):
-            params = params.copy(append=dict(grid=self.grid))
+            params = params.copy(append=dict(grid=self.grid, show_pins=show_pins))
         else:
             params['grid'] = self.grid
+            params['show_pins'] = show_pins
         return self.template_db.new_template(params=params, temp_cls=temp_cls)
 
     def add_instance(self,
@@ -943,7 +948,7 @@ class TemplateBase(DesignMaster):
             self.grid.tech_info.add_cell_boundary(self, bbox)
 
     def reexport(self, port: Port, *,
-                 net_name: str = '', label: str = '', show: bool = True) -> None:
+                 net_name: str = '', label: str = '', show: Optional[bool] = None) -> None:
         """Re-export the given port object.
 
         Add all geometries in the given port as pins with optional new name
@@ -957,9 +962,12 @@ class TemplateBase(DesignMaster):
             the new net name.  If not given, use the port's current net name.
         label : str
             the label.  If not given, use net_name.
-        show : bool
-            True to draw the pin in layout.
+        show : Optional[bool]
+            True to draw the pin in layout.  If None, use self.show_pins
         """
+        if show is None:
+            show = self._show_pins
+
         net_name = net_name or port.net_name
         if not label:
             if net_name != port.net_name:
@@ -1052,7 +1060,7 @@ class TemplateBase(DesignMaster):
         self._layout.add_label(lay_purp[0], lay_purp[1], xform, label, text_h)
 
     def add_pin(self, net_name: str, wire_arr_list: Union[WireArray, List[WireArray]],
-                *, label: str = '', show: bool = True, edge_mode: int = 0) -> None:
+                *, label: str = '', show: Optional[bool] = None, edge_mode: int = 0) -> None:
         """Add new pin to the layout.
 
         If one or more pins with the same net name already exists,
@@ -1069,12 +1077,15 @@ class TemplateBase(DesignMaster):
             this argument is used if you need the label to be different than net name
             for LVS purposes.  For example, unconnected pins usually need a colon after
             the name to indicate that LVS should short those pins together.
-        show : bool
-            if True, draw the pin in layout.
+        show : Optional[bool]
+            if True, draw the pin in layout.  If None, use self.show_pins
         edge_mode : int
             If <0, draw the pin on the lower end of the WireArray.  If >0, draw the pin
             on the upper end.  If 0, draw the pin on the entire WireArray.
         """
+        if show is None:
+            show = self._show_pins
+
         label = label or net_name
 
         if net_name not in self._port_params:
