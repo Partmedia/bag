@@ -43,343 +43,31 @@
 
 """This is the core bag module.
 """
+from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, Any, Tuple, Optional, Union, Type, Sequence, TypeVar
 
 import os
-import cProfile
-import pstats
-
-from pybag.enum import DesignOutput
 
 from .interface import ZMQDealer
-from .interface.database import DbAccess
+from .design.database import ModuleDB
 from .layout.routing.grid import RoutingGrid
 from .layout.template import TemplateDB
 from .layout.tech import TechInfo
-from .io import sim_data
 from .concurrent.core import batch_async_task
 from .env import (
-    get_port_number, get_bag_config, get_bag_work_dir, create_routing_grid
+    get_port_number, get_bag_config, get_bag_work_dir, create_routing_grid, get_bag_tmp_dir
 )
 from .util.importlib import import_class
 
 if TYPE_CHECKING:
-    from .interface.simulator import SimAccess
+    from .simulation.base import SimAccess
+    from .interface.database import DbAccess
     from .layout.template import TemplateBase
     from .design.module import Module
-    from .design.database import ModuleDB
 
     ModuleType = TypeVar('ModuleType', bound=Module)
     TemplateType = TypeVar('TemplateType', bound=TemplateBase)
-
-
-class Testbench(object):
-    """A class that represents a testbench instance.
-
-    Parameters
-    ----------
-    sim : :class:`bag.interface.simulator.SimAccess`
-        The SimAccess instance used to issue simulation commands.
-    db : :class:`bag.interface.database.DbAccess`
-        The DbAccess instance used to update testbench schematic.
-    lib : str
-        testbench library.
-    cell : str
-        testbench cell.
-    parameters : Dict[str, str]
-        the simulation parameter dictionary.  The values are string representation
-        of actual parameter values.
-    env_list : Sequence[str]
-        list of defined simulation environments.
-    default_envs : Sequence[str]
-        the selected simulation environments.
-    outputs : Dict[str, str]
-        default output expressions
-
-    Attributes
-    ----------
-    lib : str
-        testbench library.
-    cell : str
-        testbench cell.
-    save_dir : str
-        directory containing the last simulation data.
-    """
-
-    def __init__(self,  # type: Testbench
-                 sim,  # type: SimAccess
-                 db,  # type: DbAccess
-                 lib,  # type: str
-                 cell,  # type: str
-                 parameters,  # type: Dict[str, str]
-                 env_list,  # type: Sequence[str]
-                 default_envs,  # type: Sequence[str]
-                 outputs,  # type: Dict[str, str]
-                 ):
-        # type: (...) -> None
-        """Create a new testbench instance.
-        """
-        self.sim = sim
-        self.db = db
-        self.lib = lib
-        self.cell = cell
-        self.parameters = parameters
-        self.env_parameters = {}
-        self.env_list = env_list
-        self.sim_envs = default_envs
-        self.config_rules = {}
-        self.outputs = outputs
-        self.save_dir = None
-
-    def get_defined_simulation_environments(self):
-        # type: () -> Sequence[str]
-        """Return a list of defined simulation environments"""
-        return self.env_list
-
-    def get_current_simulation_environments(self):
-        # type: () -> Sequence[str]
-        """Returns a list of simulation environments this testbench will simulate."""
-        return self.sim_envs
-
-    def add_output(self, var, expr):
-        # type: (str, str) -> None
-        """Add an output expression to be recorded and exported back to python.
-
-        Parameters
-        ----------
-        var : str
-            output variable name.
-        expr : str
-            the output expression.
-        """
-        if var in sim_data.illegal_var_name:
-            raise ValueError('Variable name %s is illegal.' % var)
-        self.outputs[var] = expr
-
-    def set_parameter(self, name, val, precision=6):
-        # type: (str, Union[int, float], int) -> None
-        """Sets the value of the given simulation parameter.
-
-        Parameters
-        ----------
-        name : str
-            parameter name.
-        val : Union[int, float]
-            parameter value
-        precision : int
-            the parameter value will be rounded to this precision.
-        """
-        param_config = dict(type='single', value=val)
-        self.parameters[name] = self.sim.format_parameter_value(param_config, precision)
-
-    def set_env_parameter(self, name, val_list, precision=6):
-        # type: (str, Sequence[float], int) -> None
-        """Configure the given parameter to have different value across simulation environments.
-
-        Parameters
-        ----------
-        name : str
-            the parameter name.
-        val_list : Sequence[float]
-            the parameter values for each simulation environment.  the order of the simulation
-            environments can be found in self.sim_envs
-        precision : int
-            the parameter value will be rounded to this precision.
-        """
-        if len(self.sim_envs) != len(val_list):
-            raise ValueError('env parameter must have %d values.' % len(self.sim_envs))
-
-        default_val = None
-        for env, val in zip(self.sim_envs, val_list):
-            if env not in self.env_parameters:
-                cur_dict = {}
-                self.env_parameters[env] = cur_dict
-            else:
-                cur_dict = self.env_parameters[env]
-
-            param_config = dict(type='single', value=val)
-            cur_val = self.sim.format_parameter_value(param_config, precision)
-            if default_val is None:
-                default_val = cur_val
-            cur_dict[name] = self.sim.format_parameter_value(param_config, precision)
-        self.parameters[name] = default_val
-
-    def set_sweep_parameter(self, name, precision=6, **kwargs):
-        # type: (str, int, **Any) -> None
-        """Set to sweep the given parameter.
-
-        To set the sweep values directly:
-
-        tb.set_sweep_parameter('var', values=[1.0, 5.0, 10.0])
-
-        To set a linear sweep with start/stop/step (inclusive start and stop):
-
-        tb.set_sweep_parameter('var', start=1.0, stop=9.0, step=4.0)
-
-        To set a logarithmic sweep with points per decade (inclusive start and stop):
-
-        tb.set_sweep_parameter('var', start=1.0, stop=10.0, num_decade=3)
-
-        Parameters
-        ----------
-        name : str
-            parameter name.
-        precision : int
-            the parameter value will be rounded to this precision.
-        **kwargs : Any
-            the sweep parameters.  Refer to the above for example calls.
-        """
-        if 'values' in kwargs:
-            param_config = dict(type='list', values=kwargs['values'])
-        elif 'start' in kwargs and 'stop' in kwargs:
-            start = kwargs['start']
-            stop = kwargs['stop']
-            if 'step' in kwargs:
-                step = kwargs['step']
-                param_config = dict(type='linstep', start=start, stop=stop, step=step)
-            elif 'num_decade' in kwargs:
-                num = kwargs['num_decade']
-                param_config = dict(type='decade', start=start, stop=stop, num=num)
-            else:
-                raise Exception('Unsupported sweep arguments: %s' % kwargs)
-        else:
-            raise Exception('Unsupported sweep arguments: %s' % kwargs)
-
-        self.parameters[name] = self.sim.format_parameter_value(param_config, precision)
-
-    def set_simulation_environments(self, env_list):
-        # type: (Sequence[str]) -> None
-        """Enable the given list of simulation environments.
-
-        If more than one simulation environment is specified, then a sweep
-        will be performed.
-
-        Parameters
-        ----------
-        env_list : Sequence[str]
-        """
-        self.sim_envs = env_list
-
-    def set_simulation_view(self, lib_name, cell_name, sim_view):
-        # type: (str, str, str) -> None
-        """Set the simulation view of the given design.
-
-        For simulation, each design may have multiple views, such as schematic,
-        veriloga, extracted, etc.  This method lets you choose which view to
-        use for netlisting.  the given design can be the top level design or
-        an intermediate instance.
-
-        Parameters
-        ----------
-        lib_name : str
-            design library name.
-        cell_name : str
-            design cell name.
-        sim_view : str
-            the view to simulate with.
-        """
-        key = '%s__%s' % (lib_name, cell_name)
-        self.config_rules[key] = sim_view
-
-    def update_testbench(self):
-        # type: () -> None
-        """Commit the testbench changes to the CAD database.
-        """
-        config_list = []
-        for key, view in self.config_rules.items():
-            lib, cell = key.split('__')
-            config_list.append([lib, cell, view])
-
-        env_params = []
-        for env in self.sim_envs:
-            if env in self.env_parameters:
-                val_table = self.env_parameters[env]
-                env_params.append(list(val_table.items()))
-        self.db.update_testbench(self.lib, self.cell, self.parameters, self.sim_envs, config_list,
-                                 env_params)
-
-    def run_simulation(self, precision=6, sim_tag=None):
-        # type: (int, Optional[str]) -> Optional[str]
-        """Run simulation.
-
-        Parameters
-        ----------
-        precision : int
-            the floating point number precision.
-        sim_tag : Optional[str]
-            optional description for this simulation run.
-
-        Returns
-        -------
-        value : Optional[str]
-            the save directory path.  If simulation is cancelled, return None.
-        """
-        coro = self.async_run_simulation(precision=precision, sim_tag=sim_tag)
-        batch_async_task([coro])
-        return self.save_dir
-
-    def load_sim_results(self, hist_name, precision=6):
-        # type: (str, int) -> Optional[str]
-        """Load previous simulation data.
-
-        Parameters
-        ----------
-        hist_name : str
-            the simulation history name.
-        precision : int
-            the floating point number precision.
-
-        Returns
-        -------
-        value : Optional[str]
-            the save directory path.  If result loading is cancelled, return None.
-        """
-        coro = self.async_load_results(hist_name, precision=precision)
-        batch_async_task([coro])
-        return self.save_dir
-
-    async def async_run_simulation(self,
-                                   precision: int = 6,
-                                   sim_tag: Optional[str] = None) -> str:
-        """A coroutine that runs the simulation.
-
-        Parameters
-        ----------
-        precision : int
-            the floating point number precision.
-        sim_tag : Optional[str]
-            optional description for this simulation run.
-
-        Returns
-        -------
-        value : str
-            the save directory path.
-        """
-        self.save_dir = None
-        self.save_dir = await self.sim.async_run_simulation(self.lib, self.cell, self.outputs,
-                                                            precision=precision, sim_tag=sim_tag)
-        return self.save_dir
-
-    async def async_load_results(self, hist_name: str, precision: int = 6) -> str:
-        """A coroutine that loads previous simulation data.
-
-        Parameters
-        ----------
-        hist_name : str
-            the simulation history name.
-        precision : int
-            the floating point number precision.
-
-        Returns
-        -------
-        value : str
-            the save directory path.
-        """
-        self.save_dir = None
-        self.save_dir = await self.sim.async_load_results(self.lib, self.cell, hist_name,
-                                                          self.outputs, precision=precision)
-        return self.save_dir
 
 
 class BagProject(object):
@@ -397,7 +85,7 @@ class BagProject(object):
     def __init__(self) -> None:
         self.bag_config = get_bag_config()
 
-        bag_tmp_dir = os.environ.get('BAG_TEMP_DIR', None)
+        bag_tmp_dir = get_bag_tmp_dir()
         bag_work_dir = get_bag_work_dir()
 
         # get port files
@@ -425,12 +113,13 @@ class BagProject(object):
         except ValueError:
             lib_defs_file = ''
         db_cls = import_class(self.bag_config['database']['class'])
-        self.impl_db = db_cls(dealer, bag_tmp_dir, self.bag_config['database'], lib_defs_file)
+        self.impl_db: DbAccess = db_cls(dealer, bag_tmp_dir, self.bag_config['database'],
+                                        lib_defs_file)
         self._default_lib_path = self.impl_db.default_lib_path
 
         # make SimAccess instance.
         sim_cls = import_class(self.bag_config['simulation']['class'])
-        self.sim = sim_cls(bag_tmp_dir, self.bag_config['simulation'])  # type: SimAccess
+        self._sim: SimAccess = sim_cls(bag_tmp_dir, self.bag_config['simulation'])
 
     @property
     def tech_info(self) -> TechInfo:
@@ -443,25 +132,20 @@ class BagProject(object):
         return self._grid
 
     @property
-    def default_lib_path(self):
-        # type: () -> str
+    def default_lib_path(self) -> str:
         return self._default_lib_path
 
-    def close_bag_server(self):
-        # type: () -> None
+    @property
+    def sim_access(self) -> SimAccess:
+        return self._sim
+
+    def close_bag_server(self) -> None:
         """Close the BAG database server."""
         self.impl_db.close()
         self.impl_db = None
 
-    def close_sim_server(self):
-        # type: () -> None
-        """Close the BAG simulation server."""
-        if self.sim is not None:
-            self.sim.close()
-            self.sim = None
-
-    def import_sch_cellview(self, lib_name, cell_name, view_name='schematic'):
-        # type: (str, str, str) -> None
+    def import_sch_cellview(self, lib_name: str, cell_name: str,
+                            view_name: str = 'schematic') -> None:
         """Import the given schematic and symbol template into Python.
 
         This import process is done recursively.
@@ -536,26 +220,25 @@ class BagProject(object):
         """
         return ModuleDB(self.tech_info, impl_lib, prj=self, **kwargs)
 
-    def generate_cell(self,  # type: BagProject
-                      specs,  # type: Dict[str, Any]
-                      temp_cls,  # type: Type[TemplateType]
-                      sch_cls=None,  # type: Optional[Type[ModuleType]]
-                      gen_lay=True,  # type: bool
-                      gen_sch=False,  # type: bool
-                      run_lvs=False,  # type: bool
-                      run_rcx=False,  # type: bool
-                      debug=False,  # type: bool
-                      profile_fname='',  # type: str
-                      **kwargs,
-                      ):
-        # type: (...) -> Optional[pstats.Stats]
+    def generate_cell(self,  specs: Dict[str, Any],
+                      lay_cls: Optional[Type[TemplateType]] = None,
+                      sch_cls: Optional[Type[ModuleType]] = None,
+                      gen_lay: bool = True,
+                      gen_sch: bool = True,
+                      run_lvs: bool = False,
+                      run_rcx: bool = False,
+                      lay_db: Optional[TemplateDB] = None,
+                      sch_db: Optional[ModuleDB] = None,
+                      name_prefix: str = '',
+                      name_suffix: str = '',
+                      rcx_create_schematic: bool = False) -> str:
         """Generate layout/schematic of a given cell from specification file.
 
         Parameters
         ----------
         specs : Dict[str, Any]
             the specification dictionary.
-        temp_cls : Type[TemplateType]
+        lay_cls : Optional[Type[TemplateType]]
             the layout generator class.
         sch_cls : Optional[Type[ModuleType]]
             the schematic generator class.
@@ -567,85 +250,84 @@ class BagProject(object):
             True to run LVS.
         run_rcx : bool
             True to run RCX.
-        debug : bool
-            True to print debug messages.
-        profile_fname : str
-            If not empty, profile layout generation, and save statistics to this file.
-        **kwargs :
-            Additional optional arguments.
+        lay_db : Optional[TemplateDB]
+            the layout database.
+        sch_db : Optional[ModuleDB]
+            the schematic database.
+        name_prefix : str
+            the generated cell name prefix.
+        name_suffix : str
+            the generated cell name suffix.
+        rcx_create_schematic : bool
+            if True, create extracted schematic.
 
         Returns
         -------
-        stats : pstats.Stats
-            If profiling is enabled, the statistics object.
+        rcx_netlist : str
+            the extraction netlist.  Empty on error or if extraction is not run.
         """
-        prefix = kwargs.pop('prefix', '')
-        suffix = kwargs.pop('suffix', '')
-        output_lay = kwargs.pop('output_lay', DesignOutput.LAYOUT)
-        output_sch = kwargs.pop('output_sch', DesignOutput.SCHEMATIC)
-        options_lay = kwargs.pop('options_lay', {})
-        options_sch = kwargs.pop('options_sch', {})
+        impl_lib: str = specs['impl_lib']
+        impl_cell: str = specs['impl_cell']
+        params: Dict[str, Any] = specs['params']
 
-        impl_lib = specs['impl_lib']
-        impl_cell = specs['impl_cell']
-        params = specs['params']
-        gen_sch = gen_sch and (sch_cls is not None)
+        has_lay = lay_cls is not None
+        has_sch = sch_cls is not None
+        gen_lay = gen_lay and has_lay
+        gen_sch = gen_sch and has_sch
+        run_lvs = (run_lvs or run_rcx) and gen_lay and gen_sch
+        run_rcx = run_rcx and gen_lay and gen_sch
 
-        if gen_lay or gen_sch:
-            temp_db = self.make_template_db(impl_lib, name_prefix=prefix, name_suffix=suffix)
+        if gen_lay:
+            if lay_db is None:
+                lay_db = self.make_template_db(impl_lib, name_prefix=name_prefix,
+                                               name_suffix=name_suffix)
 
-            name_list = [impl_cell]
             print('computing layout...')
-            if profile_fname:
-                profiler = cProfile.Profile()
-                profiler.runcall(temp_db.new_master, gen_cls=temp_cls, params=params,
-                                 debug=False)
-                profiler.dump_stats(profile_fname)
-                result = pstats.Stats(profile_fname).strip_dirs()
-            else:
-                result = None
-
-            temp = temp_db.new_master(temp_cls, params=params, debug=debug)
+            lay_master = lay_db.new_template(lay_cls, params=params)
             print('computation done.')
-            temp_list = [temp]
 
-            if gen_lay:
-                print('creating layout...')
-                temp_db.batch_output(output_lay, temp_list, name_list=name_list, debug=debug,
-                                     **options_lay)
-                print('layout done.')
-
-            if gen_sch:
-                module_db = self.make_module_db(impl_lib, name_prefix=prefix, name_suffix=suffix)
-                print('computing schematic...')
-                dsn = module_db.new_master(sch_cls, params=params, debug=debug)
-                print('computation done.')
-                print('creating schematic...')
-                module_db.batch_output(output_sch, [dsn], name_list=[impl_cell], debug=debug,
-                                       **options_sch)
-                print('schematic done.')
+            print('creating layout...')
+            lay_db.batch_layout([(lay_master, impl_cell)])
+            print('layout done.')
+            sch_params = lay_master.sch_params
         else:
-            result = None
+            sch_params = params
+
+        if gen_sch:
+            if sch_db is None:
+                sch_db = self.make_module_db(impl_lib, name_prefix=name_prefix,
+                                             name_suffix=name_suffix)
+
+            print('computing schematic...')
+            sch_master = sch_db.new_master(sch_cls, params=sch_params)
+            print('computation done.')
+
+            print('creating schematic...')
+            sch_db.batch_schematic([(sch_master, impl_cell)])
+            print('schematic done.')
 
         lvs_passed = False
-        if run_lvs or run_rcx:
-            print('running lvs...')
+        if run_lvs:
+            print('running LVS...')
             lvs_passed, lvs_log = self.run_lvs(impl_lib, impl_cell)
-            print('LVS log: %s' % lvs_log)
             if lvs_passed:
                 print('LVS passed!')
             else:
-                print('LVS failed...')
-        if lvs_passed and run_rcx:
-            print('running rcx...')
-            rcx_passed, rcx_log = self.run_rcx(impl_lib, impl_cell)
-            print('RCX log: %s' % rcx_log)
-            if rcx_passed:
-                print('RCX passed!')
-            else:
-                print('RCX failed...')
+                print(f'LVS failed... log file: {lvs_log}')
 
-        return result
+        rcx_netlist = ''
+        if lvs_passed and run_rcx:
+            print('running RCX...')
+            rcx_netlist, rcx_log = self.run_rcx(impl_lib, impl_cell,
+                                                create_schematic=rcx_create_schematic)
+            if rcx_netlist:
+                print('RCX passed!')
+                if not isinstance(rcx_netlist, str):
+                    rcx_netlist = ''
+            else:
+                print(f'RCX failed... log file: {rcx_log}')
+
+        return rcx_netlist
 
     def create_library(self, lib_name, lib_path=''):
         # type: (str, str) -> None
@@ -719,54 +401,6 @@ class BagProject(object):
             layout view name.
         """
         self.impl_db.instantiate_layout(lib_name, content_list, lib_path=lib_path, view=view)
-
-    def configure_testbench(self, tb_lib, tb_cell):
-        # type: (str, str) -> Testbench
-        """Update testbench state for the given testbench.
-
-        This method fill in process-specific information for the given testbench, then returns
-        a testbench object which you can use to control simulation.
-
-        Parameters
-        ----------
-        tb_lib : str
-            testbench library name.
-        tb_cell : str
-            testbench cell name.
-
-        Returns
-        -------
-        tb : :class:`bag.core.Testbench`
-            the :class:`~bag.core.Testbench` instance.
-        """
-        if self.sim is None:
-            raise Exception('SimAccess is not set up.')
-
-        c, clist, params, outputs = self.impl_db.configure_testbench(tb_lib, tb_cell)
-        return Testbench(self.sim, self.impl_db, tb_lib, tb_cell, params, clist, [c], outputs)
-
-    def load_testbench(self, tb_lib, tb_cell):
-        # type: (str, str) -> Testbench
-        """Loads a testbench from the database.
-
-        Parameters
-        ----------
-        tb_lib : str
-            testbench library name.
-        tb_cell : str
-            testbench cell name.
-
-        Returns
-        -------
-        tb : :class:`bag.core.Testbench`
-            the :class:`~bag.core.Testbench` instance.
-        """
-        if self.sim is None:
-            raise Exception('SimAccess is not set up.')
-
-        cur_envs, all_envs, params, outputs = self.impl_db.get_testbench_info(tb_lib, tb_cell)
-        return Testbench(self.sim, self.impl_db, tb_lib, tb_cell, params, all_envs,
-                         cur_envs, outputs)
 
     def release_write_locks(self, lib_name, cell_view_list):
         # type: (str, Sequence[Tuple[str, str]]) -> None
@@ -844,7 +478,7 @@ class BagProject(object):
                 cell_name,  # type: str
                 **kwargs  # type: Any
                 ):
-        # type: (...) -> Tuple[Union[bool, Optional[str]], str]
+        # type: (...) -> Tuple[Union[bool, str], str]
         """Run RCX on the given cell.
 
         The behavior and the first return value of this method depends on the
@@ -856,8 +490,8 @@ class BagProject(object):
         a boolean value which will be True if RCX succeeds.
 
         If create_schematic is False, this method will run RCX, then return a string
-        which is the extracted netlist filename. If RCX failed, None will be returned
-        instead.
+        which is the extracted netlist filename. If RCX failed, empty string will be returned
+        as the netlist file name.
 
         Parameters
         ----------
@@ -884,7 +518,7 @@ class BagProject(object):
             if create_schematic:
                 return False, ''
             else:
-                return None, ''
+                return '', ''
         return results[0]
 
     def export_layout(self, lib_name, cell_name, out_file, **kwargs):

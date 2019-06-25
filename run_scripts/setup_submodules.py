@@ -59,8 +59,10 @@ fi
 exit 127
 fi
 '''
-import os
+from typing import List, Tuple, Optional, Dict, Any
+
 import subprocess
+from pathlib import Path
 
 from ruamel.yaml import YAML
 yaml = YAML()
@@ -68,13 +70,13 @@ yaml = YAML()
 BAG_DIR = 'BAG_framework'
 
 
-def write_to_file(fname, lines):
+def write_to_file(fname: str, lines: List[str]) -> None:
     with open(fname, 'w') as f:
         f.writelines((l + '\n' for l in lines))
     add_git_file(fname)
 
 
-def setup_python_path(module_list):
+def setup_python_path(module_list: List[Tuple[str, Dict[str, Any]]]) -> None:
     lines = ['#!/usr/bin/env bash',
              '',
              'export PYTHONPATH="${BAG_FRAMEWORK}/src"',
@@ -90,25 +92,32 @@ def setup_python_path(module_list):
     write_to_file('.bashrc_pypath', lines)
 
 
-def get_oa_libraries(mod_name):
-    root_dir = os.path.realpath(os.path.join(mod_name, 'OA'))
-    if os.path.isdir(root_dir):
-        return [name for name in os.listdir(root_dir) if
-                os.path.isdir(os.path.join(root_dir, name))]
+def get_oa_libraries(mod_name: str) -> List[str]:
+    root_dir = Path(mod_name, 'OA').resolve()
+    if root_dir.is_dir():
+        return [str(sub.stem) for sub in root_dir.iterdir() if sub.is_dir()]
 
     return []
 
 
-def setup_libs_def(module_list):
+def get_sch_libraries(mod_name: str) -> List[str]:
+    root_dir = Path(mod_name, 'src')
+    if root_dir.is_dir():
+        return [str(sub.stem) for sub in root_dir.iterdir()
+                if sub.is_dir() and (sub / 'schematic').is_dir()]
+    return []
+
+
+def setup_libs_def(module_list: List[Tuple[str, Dict[str, Any]]]) -> None:
     lines = ['BAG_prim']
     for mod_name, _ in module_list:
-        for lib_name in get_oa_libraries(mod_name):
+        for lib_name in get_sch_libraries(mod_name):
             lines.append(lib_name)
 
     write_to_file('bag_libs.def', lines)
 
 
-def setup_cds_lib(module_list):
+def setup_cds_lib(module_list: List[Tuple[str, Dict[str, Any]]]) -> None:
     lines = ['DEFINE BAG_prim $BAG_TECH_CONFIG_DIR/OA/BAG_prim']
     template = 'DEFINE {} $BAG_WORK_DIR/{}/OA/{}'
     for mod_name, _ in module_list:
@@ -118,9 +127,9 @@ def setup_cds_lib(module_list):
     write_to_file('cds.lib.bag', lines)
 
 
-def run_command(cmd, cwd=None, get_output=False):
+def run_command(cmd: List[str], cwd: Optional[str] = None, get_output: bool = False) -> str:
     timeout = 5
-    print('cmd: {}, cwd: {}'.format(' '.join(cmd), cwd))
+    print(f'cmd: {" ".join(cmd)}, cwd: {cwd}')
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE if get_output else None)
     output = ''
     try:
@@ -156,8 +165,9 @@ def run_command(cmd, cwd=None, get_output=False):
     return output
 
 
-def add_git_submodule(module_name, url, branch):
-    if os.path.exists(module_name):
+def add_git_submodule(module_name: str, url: str, branch: str) -> None:
+    mpath = Path(module_name)
+    if mpath.exists():
         # check current branch
         cur_branch = run_command(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=module_name,
                                  get_output=True)
@@ -170,33 +180,34 @@ def add_git_submodule(module_name, url, branch):
         run_command(['git', 'submodule', 'add', '-b', branch, url])
 
 
-def add_git_file(fname):
+def add_git_file(fname: str) -> None:
     run_command(['git', 'add', '-f', fname])
 
 
-def link_submodule(repo_path, module_name):
-    if os.path.exists(module_name):
+def link_submodule(repo_path: str, module_name: str) -> None:
+    mpath = Path(module_name)
+    if mpath.exists():
         # skip if already exists
         return
 
-    src = os.path.join(repo_path, module_name)
-    if not os.path.isdir(src):
+    src = Path(repo_path, module_name)
+    if not src.is_dir():
         raise ValueError('Cannot find submodule %s in %s' % (module_name, repo_path))
-    os.symlink(src, module_name)
+    mpath.symlink_to(src)
     add_git_file(module_name)
 
 
-def setup_git_submodules(module_list):
+def setup_git_submodules(module_list: List[Tuple[str, Dict[str, Any]]]) -> None:
     for module_name, module_info in module_list:
         add_git_submodule(module_name, module_info['url'], module_info.get('branch', 'master'))
 
 
-def setup_submodule_links(module_list, repo_path):
+def setup_submodule_links(module_list: List[Tuple[str, Dict[str, Any]]], repo_path: str) -> None:
     for module_name, _ in module_list:
         link_submodule(repo_path, module_name)
 
 
-def run_main():
+def run_main() -> None:
     default_submodules = {
         BAG_DIR: {
             'url': 'git@github.com:bluecheetah/bag.git',
@@ -214,12 +225,13 @@ def run_main():
     module_list = [(key, modules_info[key]) for key in sorted(modules_info.keys())]
 
     # error checking
-    if not os.path.isdir(BAG_DIR):
+    bag_dir_path = Path(BAG_DIR).resolve()
+    if not bag_dir_path.is_dir():
         raise ValueError('Cannot find directory %s' % BAG_DIR)
 
     # get real absolute path of parent directory of BAG_framework
-    repo_path = os.path.dirname(os.path.realpath(BAG_DIR))
-    cur_path = os.path.realpath('.')
+    repo_path = bag_dir_path.parent
+    cur_path = Path('.').resolve()
     if cur_path == repo_path:
         # BAG_framework is an actual directory in this repo; add dependencies as git submodules
         setup_git_submodules(module_list)

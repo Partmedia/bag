@@ -56,7 +56,7 @@ import abc
 from itertools import product
 
 from pybag.enum import (
-    PathStyle, BlockageType, BoundaryType, GeometryMode, DesignOutput, Orient2D,
+    PathStyle, BlockageType, BoundaryType, DesignOutput, Orient2D,
     Orientation, Direction, MinLenMode, RoundMode
 )
 from pybag.core import (
@@ -194,6 +194,7 @@ class TemplateBase(DesignMaster):
         self.prim_top_layer = None
         self.prim_bound_box = None
         self._sch_params: Optional[Dict[str, Any]] = None
+        self._cell_boundary_added: bool = False
 
         # add hidden parameters
         DesignMaster.__init__(self, temp_db, params, **kwargs)
@@ -203,6 +204,7 @@ class TemplateBase(DesignMaster):
             self._grid: RoutingGrid = temp_db.grid
         else:
             self._grid: RoutingGrid = tmp_grid
+        self._show_pins = self.params['show_pins']
 
         # create Cython wrapper object
         self._layout = PyLayCellView(self._grid, self.cell_name)
@@ -291,7 +293,7 @@ class TemplateBase(DesignMaster):
     @property
     def show_pins(self) -> bool:
         """bool: True to show pins."""
-        return self.params['show_pins']
+        return self._show_pins
 
     @property
     def sch_params(self) -> Optional[Dict[str, Any]]:
@@ -389,16 +391,6 @@ class TemplateBase(DesignMaster):
     def layout_cellview(self) -> PyLayCellView:
         """PyLayCellView: The internal layout object."""
         return self._layout
-
-    def set_geometry_mode(self, mode: GeometryMode) -> None:
-        """Sets the geometry mode of this layout.
-
-        Parameters
-        ----------
-        mode : GeometryMode
-            the geometry mode.
-        """
-        self._layout.set_geometry_mode(mode.value)
 
     def get_rect_bbox(self, lay_purp: Tuple[str, str]) -> BBox:
         """Returns the overall bounding box of all rectangles on the given layer.
@@ -619,7 +611,8 @@ class TemplateBase(DesignMaster):
         return self._prim_ports.keys()
 
     def new_template(self, temp_cls: Type[TemplateType], *,
-                     params: Optional[Mapping[str, Any]] = None) -> TemplateType:
+                     params: Optional[Mapping[str, Any]] = None,
+                     show_pins: bool = False) -> TemplateType:
         """Create a new template.
 
         Parameters
@@ -628,6 +621,8 @@ class TemplateBase(DesignMaster):
             the template class to instantiate.
         params : Optional[Mapping[str, Any]]
             the parameter dictionary.
+        show_pins : bool
+            True to pass show_pins in the generated template.
 
         Returns
         -------
@@ -635,9 +630,10 @@ class TemplateBase(DesignMaster):
             the new template instance.
         """
         if isinstance(params, ImmutableSortedDict):
-            params = params.copy(append=dict(grid=self.grid))
+            params = params.copy(append=dict(grid=self.grid, show_pins=show_pins))
         else:
             params['grid'] = self.grid
+            params['show_pins'] = show_pins
         return self.template_db.new_template(params=params, temp_cls=temp_cls)
 
     def add_instance(self,
@@ -931,8 +927,28 @@ class TemplateBase(DesignMaster):
         """
         return self._layout.add_boundary(bnd_type, points, commit)
 
+    def add_cell_boundary(self, bbox: BBox) -> None:
+        """Adds cell boundary in this template.
+
+        By default, this method is called when finalizing a template (although the process
+        implementation may override this behavior) to set the cell boundary, which is generally
+        used for DRC or P&R purposes.
+
+        This method can only be called once from the template.  All calls after the first one will
+        be ignored.  Therefore, if you need to set the cell boundary to be something other than
+        the template's bounding box, you can call this in the draw_layout() method.
+
+        Parameters
+        ----------
+        bbox : BBox
+            the cell boundary bounding box.
+        """
+        if not self._cell_boundary_added:
+            self._cell_boundary_added = True
+            self.grid.tech_info.add_cell_boundary(self, bbox)
+
     def reexport(self, port: Port, *,
-                 net_name: str = '', label: str = '', show: bool = True) -> None:
+                 net_name: str = '', label: str = '', show: Optional[bool] = None) -> None:
         """Re-export the given port object.
 
         Add all geometries in the given port as pins with optional new name
@@ -946,9 +962,12 @@ class TemplateBase(DesignMaster):
             the new net name.  If not given, use the port's current net name.
         label : str
             the label.  If not given, use net_name.
-        show : bool
-            True to draw the pin in layout.
+        show : Optional[bool]
+            True to draw the pin in layout.  If None, use self.show_pins
         """
+        if show is None:
+            show = self._show_pins
+
         net_name = net_name or port.net_name
         if not label:
             if net_name != port.net_name:
@@ -1041,7 +1060,7 @@ class TemplateBase(DesignMaster):
         self._layout.add_label(lay_purp[0], lay_purp[1], xform, label, text_h)
 
     def add_pin(self, net_name: str, wire_arr_list: Union[WireArray, List[WireArray]],
-                *, label: str = '', show: bool = True, edge_mode: int = 0) -> None:
+                *, label: str = '', show: Optional[bool] = None, edge_mode: int = 0) -> None:
         """Add new pin to the layout.
 
         If one or more pins with the same net name already exists,
@@ -1058,12 +1077,15 @@ class TemplateBase(DesignMaster):
             this argument is used if you need the label to be different than net name
             for LVS purposes.  For example, unconnected pins usually need a colon after
             the name to indicate that LVS should short those pins together.
-        show : bool
-            if True, draw the pin in layout.
+        show : Optional[bool]
+            if True, draw the pin in layout.  If None, use self.show_pins
         edge_mode : int
             If <0, draw the pin on the lower end of the WireArray.  If >0, draw the pin
             on the upper end.  If 0, draw the pin on the entire WireArray.
         """
+        if show is None:
+            show = self._show_pins
+
         label = label or net_name
 
         if net_name not in self._port_params:
@@ -1301,17 +1323,17 @@ class TemplateBase(DesignMaster):
                 if min_len_mode is not None:
                     # extend track to meet minimum length
                     # make sure minimum length is even so that middle coordinate exists
-                    min_len = grid.get_min_length(tid.layer_id, tid.width, even=True)
                     tr_len = cur_upper - cur_lower
-                    if min_len > tr_len:
-                        ext = min_len - tr_len
+                    next_len = grid.get_next_length(tid.layer_id, tid.width, tr_len, even=True)
+                    if next_len > tr_len:
+                        ext = next_len - tr_len
                         if min_len_mode < 0:
                             cur_lower -= ext
                         elif min_len_mode > 0:
                             cur_upper += ext
                         else:
                             cur_lower -= ext // 2
-                            cur_upper = cur_lower + min_len
+                            cur_upper = cur_lower + next_len
 
                 new_warr = WireArray(tid, cur_lower, cur_upper)
                 self._layout.add_warr(new_warr)
@@ -1834,8 +1856,7 @@ class TemplateBase(DesignMaster):
     def fix_track_min_length(self, tr_layer_id: int, width: int, track_lower: int, track_upper: int,
                              min_len_mode: MinLenMode) -> Tuple[int, int]:
         even = min_len_mode is MinLenMode.MIDDLE
-        tr_len = max(track_upper - track_lower, self.grid.get_min_length(tr_layer_id, width,
-                                                                         even=even))
+        tr_len = self.grid.get_next_length(tr_layer_id, width, track_upper - track_lower, even=even)
         if min_len_mode is MinLenMode.LOWER:
             track_lower = track_upper - tr_len
         elif min_len_mode is MinLenMode.UPPER:

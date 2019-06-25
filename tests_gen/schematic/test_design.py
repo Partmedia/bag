@@ -43,15 +43,50 @@
 
 from typing import Dict, Any, cast, Type
 
+import re
 import pathlib
 
 import pytest
 
 from pybag.enum import DesignOutput, get_extension, is_model_type
 
+from bag.env import get_bag_work_dir
 from bag.design.database import ModuleDB
 from bag.design.module import Module
 from bag.io.string import read_yaml_str
+
+
+def check_netlist(output_type: DesignOutput, actual: str, expect: str) -> None:
+    if output_type == DesignOutput.CDL:
+        inc_line = '^\\.INCLUDE (.*)$'
+    elif (output_type == DesignOutput.VERILOG or
+          output_type == DesignOutput.SYSVERILOG or
+          output_type == DesignOutput.SPECTRE):
+        inc_line = '^include "(.*)"$'
+    else:
+        inc_line = ''
+
+    if not inc_line:
+        assert actual == expect
+    else:
+        bag_work_dir = get_bag_work_dir()
+        pattern = re.compile(inc_line)
+        actual_lines = actual.splitlines()
+        expect_lines = expect.splitlines()
+        for al, el in zip(actual_lines, expect_lines):
+            am = pattern.match(al)
+            if am is None:
+                assert al == el
+            else:
+                em = pattern.match(el)
+                if em is None:
+                    assert al == el
+                else:
+                    # both are include statements
+                    apath = am.group(1)
+                    epath = em.group(1)
+                    arel = pathlib.Path(apath).relative_to(bag_work_dir)
+                    assert epath.endswith(str(arel))
 
 
 def get_sch_master(module_db: ModuleDB, sch_design_params: Dict[str, Any]) -> Module:
@@ -85,6 +120,7 @@ def test_design(tmpdir,
         # No schematic tests
         return
 
+    impl_cell = sch_design_params['top_cell_name']
     extension = get_extension(output_type)
 
     if is_model_type(output_type):
@@ -94,12 +130,11 @@ def test_design(tmpdir,
     else:
         model_params = None
 
+    out_code = int(options.get('shell', False)) + 2 * (1 - int(options.get('top_subckt', True)))
     if output_type is DesignOutput.YAML:
         base = 'out'
-    elif output_type is DesignOutput.SPECTRE:
-        base = 'out_{}'.format(int(options['shell']) + 2 * int(options.get('top_subckt', True)))
     else:
-        base = 'out_{}'.format(int(options['shell']))
+        base = f'out_{out_code}'
 
     expect_fname = sch_design_params.get('{}_{}'.format(base, extension), '')
     if not expect_fname and not gen_output:
@@ -110,10 +145,10 @@ def test_design(tmpdir,
     out_base_name = '{}.{}'.format(base, extension)
     path = tmpdir.join(out_base_name)
     if is_model_type(output_type):
-        module_db.batch_model([(dsn, 'PYTEST', model_params)], output=output_type,
+        module_db.batch_model([(dsn, impl_cell, model_params)], output=output_type,
                               fname=str(path), **options)
     else:
-        module_db.instantiate_master(output_type, dsn, top_cell_name='PYTEST', fname=str(path),
+        module_db.instantiate_master(output_type, dsn, top_cell_name=impl_cell, fname=str(path),
                                      **options)
 
     assert path.check(file=1)
@@ -137,4 +172,4 @@ def test_design(tmpdir,
         expect_dict = read_yaml_str(expect)
         assert actual_dict == expect_dict
     else:
-        assert actual == expect
+        check_netlist(output_type, actual, expect)

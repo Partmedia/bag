@@ -1,5 +1,5 @@
 simulator lang=spectre
-include "/mnt/tools/projects/erichang/cds_ff_mpt/ddr_cds_ff_mpt/cds_ff_mpt/netlist_setup/spectre_prim.scs"
+include "/scratch/projects/erichang/cds_ff_mpt/ddr_cds_ff_mpt/cds_ff_mpt/netlist_setup/spectre_prim.scs"
 
 
 
@@ -119,13 +119,13 @@ subckt pin_array_0_1 VDD VSS vin<3> vin<2> vin<1> vin<0> vout
 ends pin_array_0_1
 
 
-subckt pin_array_0 VDD VSS vin vout
-ends pin_array_0
+subckt pin_array_0_2 VDD VSS vin vout
+ends pin_array_0_2
 
 
-X0_3 VDD VSS vin mid<3> pin_array_0
-X0_2 VDD VSS vin mid<2> pin_array_0
-X0_1 VDD VSS vin mid<1> pin_array_0
-X0_0 VDD VSS vin mid<0> pin_array_0
+X0_3 VDD VSS vin mid<3> pin_array_0_2
+X0_2 VDD VSS vin mid<2> pin_array_0_2
+X0_1 VDD VSS vin mid<1> pin_array_0_2
+X0_0 VDD VSS vin mid<0> pin_array_0_2
 X1 VDD VSS mid<3> mid<2> mid<1> mid<0> vout pin_array_0_1
 

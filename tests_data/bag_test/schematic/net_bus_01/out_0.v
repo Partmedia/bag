@@ -124,7 +124,7 @@ module pin_array_0_1(
 endmodule
 
 
-module pin_array_0(
+module pin_array_0_2(
     input  wire VDD,
     input  wire VSS,
     input  wire vin,
@@ -134,7 +134,7 @@ module pin_array_0(
 endmodule
 
 
-module PYTEST(
+module pin_array_0(
     input  wire VDD,
     input  wire VSS,
     input  wire vin,
@@ -142,28 +142,28 @@ module PYTEST(
     output wire vout
 );
 
-pin_array_0 X0_3 (
+pin_array_0_2 X0_3 (
     .VDD( VDD ),
     .VSS( VSS ),
     .vin( vin ),
     .vout( mid[3] )
 );
 
-pin_array_0 X0_2 (
+pin_array_0_2 X0_2 (
     .VDD( VDD ),
     .VSS( VSS ),
     .vin( vin ),
     .vout( mid[2] )
 );
 
-pin_array_0 X0_1 (
+pin_array_0_2 X0_1 (
     .VDD( VDD ),
     .VSS( VSS ),
     .vin( vin ),
     .vout( mid[1] )
 );
 
-pin_array_0 X0_0 (
+pin_array_0_2 X0_0 (
     .VDD( VDD ),
     .VSS( VSS ),
     .vin( vin ),

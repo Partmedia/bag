@@ -61,6 +61,17 @@ from bag.io.file import read_yaml, write_yaml
 
 netlist_map_default = {
     'basic': {
+        'cds_thru': {
+            'lib_name': 'basic',
+            'cell_name': 'cds_thru',
+            'in_terms': [],
+            'io_terms': ['src', 'dst'],
+            'is_prim': True,
+            'nets': [],
+            'out_terms': [],
+            'props': {},
+            'ignore': False,
+        },
         'noConn': {
             'lib_name': 'basic',
             'cell_name': 'noConn',

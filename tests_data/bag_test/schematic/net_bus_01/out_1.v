@@ -1,6 +1,6 @@
 
 
-module PYTEST(
+module pin_array_0(
     input  wire VDD,
     input  wire VSS,
     input  wire vin,

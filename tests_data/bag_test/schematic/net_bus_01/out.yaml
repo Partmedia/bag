@@ -641,7 +641,7 @@ pin_array_0_1__symbol:
     cdbRevision:
       - 0
       - 227612
-pin_array_0:
+pin_array_0_2:
   lib_name: PYTEST
   cell_name: pin_array_0
   view_name: schematic
@@ -1028,7 +1028,7 @@ pin_array_0:
     cdbRevision:
       - 0
       - 227612
-pin_array_0__symbol:
+pin_array_0_2__symbol:
   lib_name: bag_test
   cell_name: pin_array_0
   view_name: symbol
@@ -1284,7 +1284,7 @@ pin_array_0__symbol:
     cdbRevision:
       - 0
       - 227612
-PYTEST:
+pin_array_0:
   lib_name: PYTEST
   cell_name: net_bus
   view_name: schematic
@@ -1764,7 +1764,7 @@ PYTEST:
     cdbRevision:
       - 0
       - 227612
-PYTEST__symbol:
+pin_array_0__symbol:
   lib_name: bag_test
   cell_name: net_bus
   view_name: symbol

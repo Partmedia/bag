@@ -103,14 +103,43 @@ class TrackID(PyTrackID):
         """HalfInt: the track pitch."""
         return HalfInt(self.htr_pitch)
 
-    def __getitem__(self, idx: int) -> TrackID:
+    def __getitem__(self, idx: Union[int, slice]) -> TrackID:
         num = self.num
-        if idx < 0:
-            idx += num
-        if idx < 0 or idx >= num:
-            raise ValueError(f'Invalid index {idx} with {num} wires.')
         pitch = self.pitch
-        return TrackID(self.layer_id, self.base_index + idx * pitch, width=self.width)
+        if isinstance(idx, int):
+            if idx < 0:
+                idx += num
+            if idx < 0 or idx >= num:
+                raise ValueError(f'Invalid index {idx} with {num} wires.')
+            return TrackID(self.layer_id, self.base_index + idx * pitch, width=self.width)
+        else:
+            start = idx.start
+            stop = idx.stop
+            step = idx.step
+            if step is None:
+                step = 1
+            elif not isinstance(step, int):
+                raise ValueError(f'TrackID slicing step {step} has to be integer')
+
+            if start is None:
+                start = 0
+            elif start < 0:
+                start += num
+            if start < 0 or start >= num:
+                raise ValueError(f'Invalid start index {start} with {num} wires.')
+
+            if stop is None:
+                stop = num
+            elif stop < 0:
+                stop += num
+            if stop <= 0 or stop > num:
+                raise ValueError(f'Invalid stop index {stop} with {num} wires.')
+
+            if stop <= start:
+                raise ValueError('slice got empty TrackID.')
+
+            return TrackID(self.layer_id, self.base_index + start * pitch, width=self.width,
+                           num=(stop - start) // step, pitch=pitch)
 
     def transform(self, xform: Transform, grid: RoutingGrid) -> TrackID:
         """Transform this TrackID."""
@@ -476,13 +505,22 @@ class TrackManager(object):
         same_color = kwargs.get('same_color', False)
         half_space = kwargs.get('half_space', self._half_space)
         sp_override = kwargs.get('sp_override', None)
+        if sp_override is not None:
+            sp_dict = self._tr_spaces.copy(append=sp_override)
+        else:
+            sp_dict = self._tr_spaces
 
         # if two specific wires are given, first check if any specific rules exist
-        extra_sep = self._get_space_from_tuple(layer_id, type_tuple, sp_override)
+        extra_sep = self._get_space_from_tuple(layer_id, type_tuple, sp_dict)
         if extra_sep is None:
-            extra_sep = self._get_space_from_tuple(layer_id, type_tuple, self._tr_spaces)
-            if extra_sep is None:
-                extra_sep = 0
+            # check single spacing
+            extra_sep1 = self._get_space_from_tuple(layer_id, (type_tuple[0], ''), sp_dict)
+            if extra_sep1 is None:
+                extra_sep1 = 0
+            extra_sep2 = self._get_space_from_tuple(layer_id, (type_tuple[1], ''), sp_dict)
+            if extra_sep2 is None:
+                extra_sep2 = 0
+            extra_sep = max(extra_sep1, extra_sep2)
 
         w1 = self.get_width(layer_id, type_tuple[0])
         w2 = self.get_width(layer_id, type_tuple[1])
@@ -602,3 +640,49 @@ class TrackManager(object):
 
         delta = self._get_align_delta(tot_ntr, num_used, alignment)
         return [idx + delta for idx in idx_list]
+
+    def get_next_track_obj(self,
+                           warr_tid_obj: Union[TrackID, WireArray],
+                           cur_type: Union[str, int],
+                           next_type: Union[str, int],
+                           count_rel_tracks: int = 1,
+                           **kwargs) -> TrackID:
+        """Computes next TrackID relative the WireArray or TrackID object, given wire types
+
+        Parameters
+        ----------
+        warr_tid_obj: Union[TrackID, WireArray]
+            the wire array or track id object used as the reference
+        cur_type: Union[str, int]
+            the wire type of current reference warr/tid
+        next_type: Union[str, int]
+            the wire type of the returned tid
+        count_rel_tracks: int
+            the number of spacings to skip
+            +1 means the immediate next track id
+            -1 means immediate previous track id,
+            +2 means the one after the next track id, etc.
+            if |count_rel_tracks| > 1, the skipped distance is
+            space(cur_type, next_type) + (|count_rel_tracks| - 1) * space(next_type, next_type)
+
+        Returns
+        -------
+        track_id : TrackID
+            the TrackID object of the next track id
+        """
+
+        layer_id = warr_tid_obj.layer_id
+        if isinstance(warr_tid_obj, TrackID):
+            cur_idx = warr_tid_obj.base_index
+        else:
+            cur_idx = warr_tid_obj.track_id.base_index
+
+        sep0 = self.get_sep(layer_id, (cur_type, next_type), **kwargs)
+        sep1 = self.get_sep(layer_id, (next_type, next_type), **kwargs)
+        cur_idx = HalfInt.convert(cur_idx)
+
+        sign = count_rel_tracks > 0
+        delta = sep0 + (abs(count_rel_tracks) - 1) * sep1
+        next_tidx = cur_idx + (2 * sign - 1) * delta
+
+        return TrackID(layer_id, next_tidx, width=self.get_width(layer_id, next_type))

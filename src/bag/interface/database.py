@@ -698,7 +698,12 @@ class DbAccess(InterfaceBase, abc.ABC):
                                       'You can only add schematic library if the corresponding '
                                       'package is on your PYTHONPATH')
         if not hasattr(lib_module, '__file__'):
-            raise ImportError(f'{lib_name} is not a normal python package (no __file__ attribute).')
+            raise ImportError(f'{lib_name} is not a normal python package '
+                              '(no __file__ attribute). Did you create a proper python '
+                              'schematic library?')
+        if lib_module.__file__ is None:
+            raise ImportError(f'{lib_name} has None __file__ attribute.  Did you create a proper '
+                              'python schematic library?')
 
         lib_path: Path = Path(lib_module.__file__).parent
         sch_lib_path = lib_path / 'schematic'

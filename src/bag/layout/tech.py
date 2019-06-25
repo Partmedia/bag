@@ -485,14 +485,14 @@ class TechInfo(PyTech):
     def finalize_template(self, template: TemplateBase) -> None:
         """Perform any operations necessary on the given layout template before finalizing it.
 
-        By default, nothing is done.
+        By default we add the cell boundary.
 
         Parameters
         ----------
         template : TemplateBase
             the template object.
         """
-        pass
+        template.add_cell_boundary(template.bound_box)
 
     def get_res_info(self, res_type: str, w: int, l: int, **kwargs: Any) -> Dict[str, Any]:
         """Returns a dictionary containing EM information of the given resistor.

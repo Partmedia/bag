@@ -46,13 +46,16 @@
 
 from typing import Optional, Sequence, Dict, Union, Tuple, Callable, Any, Coroutine
 
-import os
 import asyncio
-# noinspection PyProtectedMember
-from asyncio.subprocess import Process
 import subprocess
 import multiprocessing
+from pathlib import Path
+from asyncio.subprocess import Process
 from concurrent.futures import CancelledError
+
+ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], Optional[str]]
+FlowInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], Optional[str],
+                 Callable[[Optional[int], str], Any]]
 
 
 def batch_async_task(coro_list: Sequence[Coroutine]) -> Optional[Tuple[Any]]:
@@ -85,11 +88,6 @@ def batch_async_task(coro_list: Sequence[Coroutine]) -> Optional[Tuple[Any]]:
     return results
 
 
-ProcInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], Optional[str]]
-FlowInfo = Tuple[Union[str, Sequence[str]], str, Optional[Dict[str, str]], Optional[str],
-                 Callable[[Optional[int], str], Any]]
-
-
 class SubProcessManager(object):
     """A class that provides methods to run multiple subprocesses in parallel using asyncio.
 
@@ -103,8 +101,8 @@ class SubProcessManager(object):
         SIGKILL is issued.  Defaults to 10 seconds.
     """
 
-    def __init__(self, max_workers: Optional[int] = None, cancel_timeout: float = 10.0) -> None:
-        if max_workers is None:
+    def __init__(self, max_workers: int = 0, cancel_timeout: float = 10.0) -> None:
+        if max_workers == 0:
             max_workers = multiprocessing.cpu_count()
 
         self._cancel_timeout = cancel_timeout
@@ -170,15 +168,17 @@ class SubProcessManager(object):
             args = [args]
 
         # get log file name, make directory if necessary
-        log = os.path.abspath(log)
-        if os.path.isdir(log):
-            raise ValueError('log file %s is a directory.' % log)
-        os.makedirs(os.path.dirname(log), exist_ok=True)
+        log_path = Path(log).resolve()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if cwd is not None:
+            # make sure current working directory exists
+            Path(cwd).mkdir(parents=True, exist_ok=True)
 
         async with self._semaphore:
             proc = None
-            with open(log, 'w') as logf:
-                logf.write('command: %s\n' % (' '.join(args)))
+            with open(log_path, 'w') as logf:
+                logf.write(f'command: {" ".join(args)}\n')
                 logf.flush()
                 try:
                     proc = await asyncio.create_subprocess_exec(*args, stdout=logf,
@@ -230,15 +230,16 @@ class SubProcessManager(object):
                 if isinstance(args, str):
                     args = [args]
 
-                # get log file name, make directory if necessary
-                log = os.path.abspath(log)
-                if os.path.isdir(log):
-                    raise ValueError('log file %s is a directory.' % log)
-                os.makedirs(os.path.dirname(log), exist_ok=True)
+                log_path = Path(log).resolve()
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+
+                if cwd is not None:
+                    # make sure current working directory exists
+                    Path(cwd).mkdir(parents=True, exist_ok=True)
 
                 proc, retcode = None, None
-                with open(log, 'w') as logf:
-                    logf.write('command: %s\n' % (' '.join(args)))
+                with open(log_path, 'w') as logf:
+                    logf.write(f'command: {" ".join(args)}\n')
                     logf.flush()
                     try:
                         proc = await asyncio.create_subprocess_exec(*args, stdout=logf,
@@ -249,13 +250,14 @@ class SubProcessManager(object):
                         await self._kill_subprocess(proc)
                         raise err
 
-                fun_output = vfun(retcode, log)
+                fun_output = vfun(retcode, str(log_path))
                 if idx == num_proc - 1:
                     return fun_output
                 elif not fun_output:
                     return None
 
-    def batch_subprocess(self, proc_info_list: Sequence[ProcInfo]) -> Optional[Sequence[Union[int, Exception]]]:
+    def batch_subprocess(self, proc_info_list: Sequence[ProcInfo]
+                         ) -> Optional[Sequence[Union[int, Exception]]]:
         """Run all given subprocesses in parallel.
 
         Parameters

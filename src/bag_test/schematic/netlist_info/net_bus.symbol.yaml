@@ -33,6 +33,19 @@ terminals:
           - -96
     stype: 2
     ttype: 0
+  mid:
+    obj:
+      - 0
+      - layer: 229
+        purpose: 4294967295
+        net: ""
+        bbox:
+          - 276
+          - -44
+          - 284
+          - -36
+    stype: 0
+    ttype: 1
   vin:
     obj:
       - 0
@@ -224,32 +237,60 @@ shapes:
         - -60
         - 240
         - 50
+  -
+    - 5
+    - layer: 231
+      purpose: 4294967295
+      net: ""
+      points:
+        -
+          - 280
+          - -40
+        -
+          - 240
+          - -40
+  -
+    - 7
+    - layer: 229
+      purpose: 237
+      net: ""
+      origin:
+        - 234
+        - -40
+      alignment: 7
+      orient: R0
+      font: 5
+      height: 10
+      overbar: false
+      visible: true
+      drafting: true
+      text: mid
 instances:
   {}
 props:
   interfaceLastChanged:
     - 4
-    - time_val: 1557516549
+    - time_val: 1559712693
   partName:
     - 3
     - net_bus
   pin#:
     - 0
-    - 4
+    - 5
   portOrder:
     - 5
     - name: ILList
-      bin_val: ("vout" "VDD" "VSS" "vin")
+      bin_val: ("mid" "vout" "VDD" "VSS" "vin")
   vendorName:
     - 3
     - ""
 app_defs:
   _dbLastSavedCounter:
     - 0
-    - 71
+    - 99
   _dbvCvTimeStamp:
     - 0
-    - 71
+    - 99
   cdbRevision:
     - 0
     - 227612
