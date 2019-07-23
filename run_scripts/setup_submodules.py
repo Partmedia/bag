@@ -214,8 +214,15 @@ def run_main() -> None:
         },
     }
 
-    with open('bag_submodules.yaml', 'r') as f:
-        modules_info = yaml.load(f)
+    modules_info = {}
+    try:
+        # Deal with empty or nonexistent bag_submodules.yaml
+        with open('bag_submodules.yaml', 'r') as f:
+            res = yaml.load(f)
+            if res is not None:
+                modules_info = res
+    except FileNotFoundError:
+        pass
 
     # add default submodules
     for name, info in default_submodules.items():
